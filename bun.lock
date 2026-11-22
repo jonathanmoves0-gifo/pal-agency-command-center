@@ -6,6 +6,7 @@
       "name": "react-example",
       "dependencies": {
         "@google/genai": "^3.6.1",
+        "@huggingface/inference": "^4.13.33",
         "@langchain/core": "^1.5.0",
         "@langchain/langgraph": "^1.7.5",
         "@langchain/openai": "^1.8.5",
@@ -94,6 +95,12 @@
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.25.12", "", { "os": "win32", "cpu": "x64" }, "sha512-alJC0uCZpTFrSL0CCDjcgleBXPnCrEAhTBILpeAp7M/OFgoqtAetfBzX0xM00MUsVVPpVjlPuMbREqnZCXaTnA=="],
 
     "@google/genai": ["@google/genai@3.6.1", "", { "dependencies": { "google-auth-library": "^10.3.0", "p-retry": "^4.6.2", "protobufjs": "^7.6.5", "ws": "^8.21.0" }, "peerDependencies": { "@modelcontextprotocol/sdk": "^1.25.2" }, "optionalPeers": ["@modelcontextprotocol/sdk"] }, "sha512-DQIkZkl+VoZc+RUSaJ41vRuywjQDpP0t/oUf5/ddQhNW6JsPjVULW2EgHmuJ1mrr6ACtrmUdPlqtNXF1yfKySg=="],
+
+    "@huggingface/inference": ["@huggingface/inference@4.13.33", "", { "dependencies": { "@huggingface/jinja": "^0.5.13", "@huggingface/tasks": "^0.22.13" } }, "sha512-2BvmSaCNOO5tkJ+OD6KICSfhNE2qliU5pTwme+VMGAlC/y0jFQnmUuY1ZVSIgEzUitYWyQF62F02PioupNwphg=="],
+
+    "@huggingface/jinja": ["@huggingface/jinja@0.5.13", "", {}, "sha512-jM17MqFily1iyT/1LD3r5w8/CZiyapVB0+7vOw48PfVtzyKsXStmHE4jVTyDAD05Tqv3un1xrS9ILUU1ugQAYQ=="],
+
+    "@huggingface/tasks": ["@huggingface/tasks@0.22.24", "", {}, "sha512-Hf6hwLjuqEXGzhWCU91tEZIttZ6IRzZoylJ+wbHEX9NbmfnirUttGjPpHZWJV4/eX+gGJaquNWz/IulTEIO7NQ=="],
 
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 

@@ -8,7 +8,16 @@ import type {
   ProspectInput,
 } from './src/shared/types';
 import { parseBatchLines } from './src/utils/pipelineLogic';
-import { isAllowedVideoModel } from './src/utils/pitchPresenter';
+import { InferenceClient } from '@huggingface/inference';
+import {
+  DEFAULT_VIDEO_MODEL_ID,
+  DEFAULT_VIDEO_PROVIDER_ID,
+  formatVideoErrorMessage,
+  isAllowedVideoModel,
+  isAllowedVideoProvider,
+  type VideoModelId,
+  type VideoProviderId,
+} from './src/utils/pitchPresenter';
 import {
   BATCH_COOLDOWN_MS,
   getApiHealthStatus,
@@ -408,139 +417,157 @@ Generate a practical 25-second storyboard AND a sharp, realistic 5-second commer
   app.post('/api/video-generate', async (req, res) => {
     const body = req.body ?? {};
     const prompt = String(body.prompt ?? '').trim();
-    const modelId = String(body.model_id ?? '').trim();
+    const modelId = String(body.model_id ?? DEFAULT_VIDEO_MODEL_ID).trim();
+    const providerRaw = String(body.provider ?? DEFAULT_VIDEO_PROVIDER_ID).trim();
     const hfToken = String(req.header('x-hf-token') || body.hf_token || '').trim();
 
     if (!hfToken) {
       res.status(401).json({
-        error: 'No Hugging Face token provided. Add your token in API Settings.',
+        error: 'Add your Hugging Face token in API Settings to render a playable video clip.',
       });
       return;
     }
 
     if (!prompt) {
-      res.status(400).json({ error: 'A video prompt is required.' });
+      res.status(400).json({ error: 'Please provide a video prompt first.' });
       return;
     }
 
     if (!isAllowedVideoModel(modelId)) {
-      res.status(400).json({ error: 'Unsupported video model selection.' });
+      res.status(400).json({ error: 'Selected video model is not supported.' });
       return;
     }
 
-    const callRouter = async (endpointUrl: string, payload: Record<string, unknown>) => {
-      return fetch(endpointUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${hfToken}`,
-          'Content-Type': 'application/json',
-          Accept: 'video/mp4, application/json',
-        },
-        body: JSON.stringify(payload),
-      });
+    if (!isAllowedVideoProvider(providerRaw)) {
+      res.status(400).json({ error: 'Selected video provider is not supported.' });
+      return;
+    }
+
+    const extractErrorDetails = (err: unknown): { status?: number; message: string } => {
+      if (err && typeof err === 'object') {
+        const record = err as {
+          message?: unknown;
+          httpResponse?: { status?: unknown; body?: unknown };
+        };
+        const status =
+          typeof record.httpResponse?.status === 'number' ? record.httpResponse.status : undefined;
+        let bodyMsg = '';
+        const httpBody = record.httpResponse?.body;
+        if (typeof httpBody === 'string') {
+          bodyMsg = httpBody;
+        } else if (httpBody && typeof httpBody === 'object') {
+          const b = httpBody as { error?: unknown; message?: unknown; detail?: unknown };
+          bodyMsg = String(b.error || b.message || b.detail || '');
+        }
+        const message = [bodyMsg, String(record.message ?? '')].filter(Boolean).join(' ');
+        return { status, message };
+      }
+      return { message: String(err ?? '') };
     };
 
-    try {
-      const payload = {
-        inputs: prompt,
-        parameters: {
-          negative_prompt: 'blurry, low quality, distorted, watermark, garbled text',
-        },
-      };
-
-      let hfRes = await callRouter(
-        `https://router.huggingface.co/hf-inference/models/${modelId}`,
-        payload
-      );
-
-      // If hf-inference doesn't host this model directly, inspect live provider mapping on Hub
-      if (hfRes.status === 404 || hfRes.status === 400) {
+    const resolveActiveProviders = async (
+      targetModel: VideoModelId,
+      token: string
+    ): Promise<Array<Exclude<VideoProviderId, 'auto'>>> => {
+      const supported: Array<Exclude<VideoProviderId, 'auto'>> = ['fal-ai', 'wavespeed'];
+      try {
         const metaRes = await fetch(
-          `https://huggingface.co/api/models/${modelId}?expand[]=inferenceProviderMapping`
+          `https://huggingface.co/api/models/${targetModel}?expand[]=inferenceProviderMapping`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
         );
         if (metaRes.ok) {
           const meta = (await metaRes.json()) as {
-            inferenceProviderMapping?: Record<string, { status?: string; providerId?: string }>;
+            inferenceProviderMapping?: Record<
+              string,
+              { status?: string; task?: string }
+            >;
           };
           const mapping = meta.inferenceProviderMapping ?? {};
-          const liveProvider = Object.entries(mapping).find(
-            ([, info]) => info?.status === 'live'
-          );
-          if (liveProvider) {
-            const [providerName, info] = liveProvider;
-            const targetPath = info?.providerId || modelId;
-            hfRes = await callRouter(
-              `https://router.huggingface.co/${providerName}/models/${targetPath}`,
-              providerName === 'fal-ai' ? { prompt } : payload
-            );
+          const activeLive = Object.entries(mapping)
+            .filter(
+              ([name, info]) =>
+                (name === 'fal-ai' || name === 'wavespeed') &&
+                info?.status === 'live' &&
+                (!info?.task || info.task === 'text-to-video')
+            )
+            .map(([name]) => name as Exclude<VideoProviderId, 'auto'>);
+
+          if (activeLive.length > 0) {
+            return activeLive;
           }
         }
+      } catch {
+        // Fall through to default provider list
       }
+      return supported;
+    };
 
-      if (!hfRes.ok) {
-        const errText = await hfRes.text().catch(() => '');
-        let detail = errText;
-        try {
-          const parsed = JSON.parse(errText) as { error?: string; message?: string };
-          detail = parsed.error || parsed.message || errText;
-        } catch {
-          // raw text
-        }
+    const client = new InferenceClient(hfToken);
 
-        if (hfRes.status === 401 || hfRes.status === 403) {
-          res.status(401).json({
-            error: 'Your Hugging Face token was rejected. Check your token permissions in API Settings.',
-          });
-          return;
-        }
-        if (hfRes.status === 402 || hfRes.status === 429) {
-          res.status(429).json({
-            error: `Hugging Face inference limit reached (${detail || hfRes.statusText}).`,
-          });
-          return;
-        }
-        res.status(hfRes.status >= 400 && hfRes.status < 600 ? hfRes.status : 502).json({
-          error: `Hugging Face video generation failed: ${detail || hfRes.statusText}`,
-        });
-        return;
+    const runWithProvider = async (targetProvider: Exclude<VideoProviderId, 'auto'>) => {
+      const videoBlob = await client.textToVideo({
+        model: modelId,
+        inputs: prompt,
+        provider: targetProvider,
+        parameters: {
+          negative_prompt: ['blurry', 'low quality', 'distorted', 'watermark', 'garbled text'],
+        },
+      });
+      const buf = Buffer.from(await videoBlob.arrayBuffer());
+      if (buf.length === 0) {
+        throw new Error('The provider returned an empty video file.');
       }
+      return { buf, contentType: videoBlob.type || 'video/mp4' };
+    };
 
-      const contentType = hfRes.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        const json = (await hfRes.json()) as {
-          video?: { url?: string };
-          url?: string;
-          output?: string;
-        };
-        const videoUrl = json.video?.url || json.url || json.output;
-        if (!videoUrl) {
-          res.status(502).json({
-            error: 'Hugging Face returned JSON without a playable MP4 URL.',
-          });
-          return;
-        }
-        const mediaRes = await fetch(videoUrl);
-        if (!mediaRes.ok) {
-          res.status(502).json({ error: 'Could not download generated MP4 from provider URL.' });
-          return;
-        }
-        const buf = Buffer.from(await mediaRes.arrayBuffer());
-        res.setHeader('Content-Type', 'video/mp4');
+    const candidates: Array<Exclude<VideoProviderId, 'auto'>> =
+      providerRaw === 'auto'
+        ? await resolveActiveProviders(modelId, hfToken)
+        : [providerRaw];
+
+    let lastFailure: { status?: number; message: string; providerId: VideoProviderId } = {
+      status: 502,
+      message: 'Could not generate video.',
+      providerId: providerRaw,
+    };
+
+    for (const candidate of candidates) {
+      try {
+        const { buf, contentType } = await runWithProvider(candidate);
+        res.setHeader('Content-Type', contentType.startsWith('video/') ? contentType : 'video/mp4');
+        res.setHeader('X-HF-Provider-Used', candidate);
         res.send(buf);
         return;
-      }
+      } catch (err) {
+        const { status, message } = extractErrorDetails(err);
+        lastFailure = { status, message, providerId: candidate };
 
-      const buf = Buffer.from(await hfRes.arrayBuffer());
-      res.setHeader('Content-Type', contentType.startsWith('video/') ? contentType : 'video/mp4');
-      res.send(buf);
-    } catch (err) {
-      res.status(500).json({
-        error:
-          err instanceof Error
-            ? `Video generation error: ${err.message}`
-            : 'Failed to contact Hugging Face text-to-video API.',
-      });
+        // Token invalid or missing Inference Providers permission won't succeed on another provider
+        const isAuthFailure =
+          status === 401 ||
+          (status === 403 && /(permission|scope|inference providers)/i.test(message));
+        if (isAuthFailure || providerRaw !== 'auto') {
+          break;
+        }
+      }
     }
+
+    const httpStatus =
+      lastFailure.status && lastFailure.status >= 400 && lastFailure.status < 600
+        ? lastFailure.status
+        : 502;
+
+    res.status(httpStatus).json({
+      error: formatVideoErrorMessage(
+        lastFailure.message,
+        lastFailure.status,
+        providerRaw === 'auto' ? lastFailure.providerId : providerRaw
+      ),
+    });
   });
 
   // Mount Vite middleware in development, or serve dist/ in production

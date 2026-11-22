@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@google/genai": "^3.6.1",
+    "@huggingface/inference": "^4.13.33",
     "@langchain/core": "^1.5.0",
     "@langchain/langgraph": "^1.7.5",
     "@langchain/openai": "^1.8.5",

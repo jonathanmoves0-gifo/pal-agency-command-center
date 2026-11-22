@@ -2,28 +2,123 @@ import type { LeadRecord } from '../shared/types';
 
 export type MarketTrack = 'LOCAL' | 'GLOBAL';
 export type RecommendedServiceType = 'Website Upgrade' | 'AI Booking Assistant' | 'AI Video Ads';
-export type VideoQualityModelId =
-  | 'Lightricks/LTX-Video-0.9.8-13B-distilled'
-  | 'Wan-AI/Wan2.2-TI2V-5B';
+export type VideoModelId =
+  | 'Wan-AI/Wan2.2-TI2V-5B'
+  | 'Wan-AI/Wan2.2-T2V-A14B'
+  | 'Wan-AI/Wan2.1-T2V-14B'
+  | 'tencent/HunyuanVideo';
+
+export type VideoProviderId = 'auto' | 'fal-ai' | 'wavespeed';
 
 export const HF_TOKEN_STORAGE_KEY = 'pal_hf_token_v1';
 
-export const VIDEO_QUALITY_OPTIONS: Array<{
+export const DEFAULT_VIDEO_MODEL_ID: VideoModelId = 'Wan-AI/Wan2.2-TI2V-5B';
+export const DEFAULT_VIDEO_PROVIDER_ID: VideoProviderId = 'auto';
+
+export const VIDEO_MODEL_OPTIONS: Array<{
   label: string;
-  modelId: VideoQualityModelId;
+  modelId: VideoModelId;
 }> = [
   {
-    label: 'Fast Draft (LTX-Video)',
-    modelId: 'Lightricks/LTX-Video-0.9.8-13B-distilled',
+    label: 'Wan 2.2 Fast 5B (Default)',
+    modelId: 'Wan-AI/Wan2.2-TI2V-5B',
   },
   {
-    label: 'High Detail (Wan 2.2)',
-    modelId: 'Wan-AI/Wan2.2-TI2V-5B',
+    label: 'Wan 2.2 High Detail (A14B)',
+    modelId: 'Wan-AI/Wan2.2-T2V-A14B',
+  },
+  {
+    label: 'Wan 2.1 Studio (14B)',
+    modelId: 'Wan-AI/Wan2.1-T2V-14B',
+  },
+  {
+    label: 'HunyuanVideo (Cinema Quality)',
+    modelId: 'tencent/HunyuanVideo',
   },
 ];
 
-export function isAllowedVideoModel(modelId: string): modelId is VideoQualityModelId {
-  return VIDEO_QUALITY_OPTIONS.some((opt) => opt.modelId === modelId);
+export const VIDEO_PROVIDER_OPTIONS: Array<{
+  label: string;
+  providerId: VideoProviderId;
+}> = [
+  {
+    label: 'Auto (Try active provider first)',
+    providerId: 'auto',
+  },
+  {
+    label: 'fal',
+    providerId: 'fal-ai',
+  },
+  {
+    label: 'WaveSpeed',
+    providerId: 'wavespeed',
+  },
+];
+
+export function isAllowedVideoModel(modelId: string): modelId is VideoModelId {
+  return VIDEO_MODEL_OPTIONS.some((opt) => opt.modelId === modelId);
+}
+
+export function isAllowedVideoProvider(providerId: string): providerId is VideoProviderId {
+  return VIDEO_PROVIDER_OPTIONS.some((opt) => opt.providerId === providerId);
+}
+
+export function getVideoProviderLabel(providerId: string): string {
+  const match = VIDEO_PROVIDER_OPTIONS.find((opt) => opt.providerId === providerId);
+  if (match) {
+    return match.providerId === 'auto' ? 'active provider' : match.label;
+  }
+  return 'selected provider';
+}
+
+export function formatVideoErrorMessage(
+  rawError: string,
+  status?: number,
+  providerId: VideoProviderId = 'auto'
+): string {
+  const normalized = rawError.toLowerCase();
+  const providerName = getVideoProviderLabel(providerId);
+
+  if (
+    status === 402 ||
+    /(payment required|credit|credits|billing|balance|insufficient funds|depleted|monthly included|pre-?paid|quota exceeded)/i.test(
+      normalized
+    )
+  ) {
+    return `Your Hugging Face account or ${providerName} needs video credits or active billing to render this clip. Your generated video script and prompt are still ready below.`;
+  }
+
+  if (
+    status === 401 ||
+    /(invalid token|unauthorized|invalid username or password|bad credentials|token is invalid)/i.test(
+      normalized
+    )
+  ) {
+    return 'Your Hugging Face token was not accepted. Check or update your token in API Settings—your script and prompt are still ready below.';
+  }
+
+  if (
+    status === 403 ||
+    /(forbidden|permission|scope|inference providers|not authorized|access denied)/i.test(normalized)
+  ) {
+    return 'Your Hugging Face token does not have Inference Providers permission enabled. Update the token permissions on Hugging Face or paste a new token in API Settings.';
+  }
+
+  if (status === 429 || /(rate limit|too many requests|throttl)/i.test(normalized)) {
+    return `Too many requests went to ${providerName} right now. Wait a moment and try again, or switch providers.`;
+  }
+
+  if (
+    status === 503 ||
+    status === 504 ||
+    /(timed out|timeout|temporarily unavailable|loading|overloaded|service unavailable)/i.test(
+      normalized
+    )
+  ) {
+    return `The ${providerName} video server is busy right now. Try again in a moment or switch to another provider.`;
+  }
+
+  return 'Video rendering could not finish right now. Try switching the video provider or model, and use your generated script and prompt below in the meantime.';
 }
 
 export interface ClientPitchPresentation {

@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Check, Copy, Download, KeyRound, Loader2, Video } from 'lucide-react';
 import {
-  VIDEO_QUALITY_OPTIONS,
+  DEFAULT_VIDEO_MODEL_ID,
+  DEFAULT_VIDEO_PROVIDER_ID,
+  getVideoProviderLabel,
+  VIDEO_MODEL_OPTIONS,
+  VIDEO_PROVIDER_OPTIONS,
   type MarketTrack,
-  type VideoQualityModelId,
+  type VideoModelId,
+  type VideoProviderId,
 } from '../utils/pitchPresenter';
 
 type VideoType = 'Product Showcase' | 'Customer Story' | 'Before & After';
@@ -56,12 +61,14 @@ export function AiVideoContentView({
 }: AiVideoContentViewProps) {
   const [businessOrProduct, setBusinessOrProduct] = useState('');
   const [videoType, setVideoType] = useState<VideoType>('Product Showcase');
-  const [selectedModelId, setSelectedModelId] = useState<VideoQualityModelId>(
-    VIDEO_QUALITY_OPTIONS[0].modelId
+  const [selectedModelId, setSelectedModelId] = useState<VideoModelId>(DEFAULT_VIDEO_MODEL_ID);
+  const [selectedProviderId, setSelectedProviderId] = useState<VideoProviderId>(
+    DEFAULT_VIDEO_PROVIDER_ID
   );
 
   const [concept, setConcept] = useState<VideoConcept>(INITIAL_CONCEPT);
   const [videoObjectUrl, setVideoObjectUrl] = useState<string | null>(null);
+  const [generatedProviderLabel, setGeneratedProviderLabel] = useState<string | null>(null);
   const [stageMessage, setStageMessage] = useState<string | null>(null);
   const [tokenNotice, setTokenNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +87,11 @@ export function AiVideoContentView({
     e.preventDefault();
     setError(null);
     setTokenNotice(null);
+    setGeneratedProviderLabel(null);
+    if (videoObjectUrl) {
+      URL.revokeObjectURL(videoObjectUrl);
+      setVideoObjectUrl(null);
+    }
 
     if (!businessOrProduct.trim()) {
       setError('Please enter a Business or Product Name first.');
@@ -87,10 +99,10 @@ export function AiVideoContentView({
     }
 
     setIsGenerating(true);
-    setStageMessage('Step 1: Writing a 5-second commercial video prompt...');
+    setStageMessage('Step 1: Writing your 5-second commercial prompt and script...');
 
     try {
-      // Step 1: Gemini creates the 5-second commercial prompt + fallback script/storyboard
+      // Step 1: Gemini creates the 5-second commercial prompt + companion script/storyboard
       const conceptRes = await fetch('/api/video-concept', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -118,18 +130,23 @@ export function AiVideoContentView({
       };
       setConcept(nextConcept);
 
-      // Step 3 fallback: No Hugging Face token saved yet
+      // No Hugging Face token saved yet -> keep generated script/prompt visible and prompt Settings
       if (!hfToken.trim()) {
         setTokenNotice(
-          'Add your Hugging Face token in API Settings to render a playable MP4 clip. Your generated video script and 5-second prompt are ready below.'
+          'Add your Hugging Face token in API Settings to render a playable video clip. Your generated video script and 5-second prompt are ready below.'
         );
         return;
       }
 
-      // Step 2: Send prompt to Hugging Face text-to-video endpoint
-      const selectedOption = VIDEO_QUALITY_OPTIONS.find((o) => o.modelId === selectedModelId);
+      // Step 2: Send prompt to Hugging Face Inference Providers via server proxy
+      const selectedModelOption = VIDEO_MODEL_OPTIONS.find((o) => o.modelId === selectedModelId);
+      const providerDisplay =
+        selectedProviderId === 'auto'
+          ? 'active Hugging Face provider'
+          : getVideoProviderLabel(selectedProviderId);
+
       setStageMessage(
-        `Step 2: Rendering MP4 clip with ${selectedOption?.label || selectedModelId}...`
+        `Step 2: Rendering video with ${selectedModelOption?.label || selectedModelId} via ${providerDisplay}...`
       );
 
       const videoRes = await fetch('/api/video-generate', {
@@ -141,27 +158,29 @@ export function AiVideoContentView({
         body: JSON.stringify({
           prompt: generatedPrompt,
           model_id: selectedModelId,
+          provider: selectedProviderId,
         }),
       });
 
       if (!videoRes.ok) {
-        let errMsg = `Video generation failed (${videoRes.status}).`;
+        let errMsg =
+          'Video rendering could not finish right now. Your generated script and prompt are ready below.';
         try {
           const errJson = (await videoRes.json()) as { error?: string };
           if (errJson?.error) errMsg = errJson.error;
         } catch {
-          // ignore
+          // ignore parse failure
         }
-        setTokenNotice(
-          `${errMsg} Showing your generated video script and prompt below as a fallback.`
-        );
+        setTokenNotice(errMsg);
         return;
       }
 
+      const usedProviderId = videoRes.headers.get('x-hf-provider-used');
+      setGeneratedProviderLabel(
+        usedProviderId ? getVideoProviderLabel(usedProviderId) : providerDisplay
+      );
+
       const mp4Blob = await videoRes.blob();
-      if (videoObjectUrl) {
-        URL.revokeObjectURL(videoObjectUrl);
-      }
       const nextUrl = URL.createObjectURL(mp4Blob);
       setVideoObjectUrl(nextUrl);
     } catch (err) {
@@ -244,22 +263,45 @@ export function AiVideoContentView({
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <label htmlFor="video-quality-speed" className="block text-xs font-semibold text-[#475569]">
-              Video Quality / Speed
-            </label>
-            <select
-              id="video-quality-speed"
-              value={selectedModelId}
-              onChange={(e) => setSelectedModelId(e.target.value as VideoQualityModelId)}
-              className="w-full rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] px-3.5 py-2.5 text-sm text-[#0F172A] focus:border-[#2563EB] focus:outline-none cursor-pointer"
-            >
-              {VIDEO_QUALITY_OPTIONS.map((option) => (
-                <option key={option.modelId} value={option.modelId}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label htmlFor="video-model-select" className="block text-xs font-semibold text-[#475569]">
+                Video Model
+              </label>
+              <select
+                id="video-model-select"
+                value={selectedModelId}
+                onChange={(e) => setSelectedModelId(e.target.value as VideoModelId)}
+                className="w-full rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0F172A] focus:border-[#2563EB] focus:outline-none cursor-pointer"
+              >
+                {VIDEO_MODEL_OPTIONS.map((option) => (
+                  <option key={option.modelId} value={option.modelId}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label
+                htmlFor="video-provider-select"
+                className="block text-xs font-semibold text-[#475569]"
+              >
+                Video Provider
+              </label>
+              <select
+                id="video-provider-select"
+                value={selectedProviderId}
+                onChange={(e) => setSelectedProviderId(e.target.value as VideoProviderId)}
+                className="w-full rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0F172A] focus:border-[#2563EB] focus:outline-none cursor-pointer"
+              >
+                {VIDEO_PROVIDER_OPTIONS.map((option) => (
+                  <option key={option.providerId} value={option.providerId}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {!hfToken.trim() && (
@@ -370,11 +412,13 @@ export function AiVideoContentView({
         {/* Playable MP4 Clip Player when generated */}
         {videoObjectUrl && (
           <div className="rounded-xl border border-[#E2E8F0] border-t-4 border-t-[#10B981] bg-[#F8FAFC] p-4 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-semibold uppercase tracking-wide text-[#059669]">
                 Generated MP4 Clip Ready
               </span>
-              <span className="text-xs font-medium text-[#475569]">5-second commercial cut</span>
+              <span className="text-xs font-medium text-[#475569]">
+                {generatedProviderLabel ? `Rendered via ${generatedProviderLabel}` : '5-second commercial cut'}
+              </span>
             </div>
             <video
               src={videoObjectUrl}
