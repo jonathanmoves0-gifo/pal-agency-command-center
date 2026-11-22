@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
   :root {
@@ -10,8 +9,8 @@
   html,
   body {
     font-family: var(--font-sans);
-    background-color: #0D0F12;
-    color: #ECEFF4;
+    background-color: #F8FAFC;
+    color: #0F172A;
   }
 
   .font-mono {
@@ -20,20 +19,20 @@
   }
 }
 
-/* Custom utilitarian scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0D0F12;
+  background: #F8FAFC;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #242830;
+  background: #CBD5E1;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #343A46;
+  background: #94A3B8;
 }

@@ -11,6 +11,7 @@ import { parseBatchLines } from './src/utils/pipelineLogic';
 import {
   BATCH_COOLDOWN_MS,
   getApiHealthStatus,
+  invokeStructuredLlm,
   sleepWithAbort,
 } from './server/llmClient';
 import { buildScoutGraph, buildSignalHunterGraph } from './server/signalGraph';
@@ -350,6 +351,53 @@ async function startServer() {
       }
     } finally {
       res.end();
+    }
+  });
+
+  // 4. AI Video & Content concept generator
+  app.post('/api/video-concept', async (req, res) => {
+    const body = req.body ?? {};
+    const businessName = String(body.business_name ?? '').trim();
+    const videoType = String(body.video_type ?? '').trim();
+    const market = String(body.market ?? 'Global Market').trim();
+
+    if (!businessName || !videoType) {
+      res.status(400).json({ error: 'Business or Product Name and Video Type are required.' });
+      return;
+    }
+
+    try {
+      const result = await invokeStructuredLlm<{
+        title: string;
+        hook: string;
+        scenes: Array<{ label: string; visual: string; line: string }>;
+        cta: string;
+      }>({
+        role: 'outreach',
+        systemInstruction: `You write clear, everyday short-form video concepts for local and international service businesses. Avoid agency jargon and buzzwords.
+Return ONLY valid JSON:
+{
+  "title": "Short concept title",
+  "hook": "Opening 3-second spoken line that grabs attention",
+  "scenes": [
+    { "label": "Scene 1 (0-5s)", "visual": "What appears on screen", "line": "What the speaker says" },
+    { "label": "Scene 2 (5-15s)", "visual": "What appears on screen", "line": "What the speaker says" },
+    { "label": "Scene 3 (15-25s)", "visual": "What appears on screen", "line": "What the speaker says" }
+  ],
+  "cta": "Simple, friendly closing call to action"
+}`,
+        prompt: `Business or Product Name: ${businessName}
+Video Type: ${videoType}
+Market Focus: ${market}
+Generate a practical, easy-to-film 25-second video concept.`,
+        useGrounding: false,
+      });
+
+      res.json(result.data);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Could not generate video concept.',
+      });
     }
   });
 
