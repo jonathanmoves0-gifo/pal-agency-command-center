@@ -1,0 +1,8 @@
+{
+  "name": "Pal Agency Command Center",
+  "description": "Self-calibrating LangGraph agency signal hunter, lead qualifier, and outreach command center.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
