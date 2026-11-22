@@ -2,6 +2,29 @@ import type { LeadRecord } from '../shared/types';
 
 export type MarketTrack = 'LOCAL' | 'GLOBAL';
 export type RecommendedServiceType = 'Website Upgrade' | 'AI Booking Assistant' | 'AI Video Ads';
+export type VideoQualityModelId =
+  | 'Lightricks/LTX-Video-0.9.8-13B-distilled'
+  | 'Wan-AI/Wan2.2-TI2V-5B';
+
+export const HF_TOKEN_STORAGE_KEY = 'pal_hf_token_v1';
+
+export const VIDEO_QUALITY_OPTIONS: Array<{
+  label: string;
+  modelId: VideoQualityModelId;
+}> = [
+  {
+    label: 'Fast Draft (LTX-Video)',
+    modelId: 'Lightricks/LTX-Video-0.9.8-13B-distilled',
+  },
+  {
+    label: 'High Detail (Wan 2.2)',
+    modelId: 'Wan-AI/Wan2.2-TI2V-5B',
+  },
+];
+
+export function isAllowedVideoModel(modelId: string): modelId is VideoQualityModelId {
+  return VIDEO_QUALITY_OPTIONS.some((opt) => opt.modelId === modelId);
+}
 
 export interface ClientPitchPresentation {
   service: RecommendedServiceType;

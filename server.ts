@@ -8,6 +8,7 @@ import type {
   ProspectInput,
 } from './src/shared/types';
 import { parseBatchLines } from './src/utils/pipelineLogic';
+import { isAllowedVideoModel } from './src/utils/pitchPresenter';
 import {
   BATCH_COOLDOWN_MS,
   getApiHealthStatus,
@@ -354,7 +355,7 @@ async function startServer() {
     }
   });
 
-  // 4. AI Video & Content concept generator
+  // 4. AI Video & Content concept + 5-second commercial video prompt generator
   app.post('/api/video-concept', async (req, res) => {
     const body = req.body ?? {};
     const businessName = String(body.business_name ?? '').trim();
@@ -369,15 +370,17 @@ async function startServer() {
     try {
       const result = await invokeStructuredLlm<{
         title: string;
+        video_prompt: string;
         hook: string;
         scenes: Array<{ label: string; visual: string; line: string }>;
         cta: string;
       }>({
-        role: 'outreach',
-        systemInstruction: `You write clear, everyday short-form video concepts for local and international service businesses. Avoid agency jargon and buzzwords.
+        role: 'scoring',
+        systemInstruction: `You write clear, everyday short-form video concepts and realistic 5-second commercial text-to-video prompts for service businesses. Avoid agency jargon and buzzwords.
 Return ONLY valid JSON:
 {
   "title": "Short concept title",
+  "video_prompt": "One vivid, realistic 5-second commercial camera shot prompt (subject, setting, lighting, camera movement, action, photorealistic commercial style, no text overlays)",
   "hook": "Opening 3-second spoken line that grabs attention",
   "scenes": [
     { "label": "Scene 1 (0-5s)", "visual": "What appears on screen", "line": "What the speaker says" },
@@ -389,7 +392,7 @@ Return ONLY valid JSON:
         prompt: `Business or Product Name: ${businessName}
 Video Type: ${videoType}
 Market Focus: ${market}
-Generate a practical, easy-to-film 25-second video concept.`,
+Generate a practical 25-second storyboard AND a sharp, realistic 5-second commercial text-to-video prompt for ${businessName}.`,
         useGrounding: false,
       });
 
@@ -397,6 +400,145 @@ Generate a practical, easy-to-film 25-second video concept.`,
     } catch (err) {
       res.status(500).json({
         error: err instanceof Error ? err.message : 'Could not generate video concept.',
+      });
+    }
+  });
+
+  // 5. Hugging Face Inference Providers text-to-video proxy (returns playable MP4)
+  app.post('/api/video-generate', async (req, res) => {
+    const body = req.body ?? {};
+    const prompt = String(body.prompt ?? '').trim();
+    const modelId = String(body.model_id ?? '').trim();
+    const hfToken = String(req.header('x-hf-token') || body.hf_token || '').trim();
+
+    if (!hfToken) {
+      res.status(401).json({
+        error: 'No Hugging Face token provided. Add your token in API Settings.',
+      });
+      return;
+    }
+
+    if (!prompt) {
+      res.status(400).json({ error: 'A video prompt is required.' });
+      return;
+    }
+
+    if (!isAllowedVideoModel(modelId)) {
+      res.status(400).json({ error: 'Unsupported video model selection.' });
+      return;
+    }
+
+    const callRouter = async (endpointUrl: string, payload: Record<string, unknown>) => {
+      return fetch(endpointUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${hfToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'video/mp4, application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+    };
+
+    try {
+      const payload = {
+        inputs: prompt,
+        parameters: {
+          negative_prompt: 'blurry, low quality, distorted, watermark, garbled text',
+        },
+      };
+
+      let hfRes = await callRouter(
+        `https://router.huggingface.co/hf-inference/models/${modelId}`,
+        payload
+      );
+
+      // If hf-inference doesn't host this model directly, inspect live provider mapping on Hub
+      if (hfRes.status === 404 || hfRes.status === 400) {
+        const metaRes = await fetch(
+          `https://huggingface.co/api/models/${modelId}?expand[]=inferenceProviderMapping`
+        );
+        if (metaRes.ok) {
+          const meta = (await metaRes.json()) as {
+            inferenceProviderMapping?: Record<string, { status?: string; providerId?: string }>;
+          };
+          const mapping = meta.inferenceProviderMapping ?? {};
+          const liveProvider = Object.entries(mapping).find(
+            ([, info]) => info?.status === 'live'
+          );
+          if (liveProvider) {
+            const [providerName, info] = liveProvider;
+            const targetPath = info?.providerId || modelId;
+            hfRes = await callRouter(
+              `https://router.huggingface.co/${providerName}/models/${targetPath}`,
+              providerName === 'fal-ai' ? { prompt } : payload
+            );
+          }
+        }
+      }
+
+      if (!hfRes.ok) {
+        const errText = await hfRes.text().catch(() => '');
+        let detail = errText;
+        try {
+          const parsed = JSON.parse(errText) as { error?: string; message?: string };
+          detail = parsed.error || parsed.message || errText;
+        } catch {
+          // raw text
+        }
+
+        if (hfRes.status === 401 || hfRes.status === 403) {
+          res.status(401).json({
+            error: 'Your Hugging Face token was rejected. Check your token permissions in API Settings.',
+          });
+          return;
+        }
+        if (hfRes.status === 402 || hfRes.status === 429) {
+          res.status(429).json({
+            error: `Hugging Face inference limit reached (${detail || hfRes.statusText}).`,
+          });
+          return;
+        }
+        res.status(hfRes.status >= 400 && hfRes.status < 600 ? hfRes.status : 502).json({
+          error: `Hugging Face video generation failed: ${detail || hfRes.statusText}`,
+        });
+        return;
+      }
+
+      const contentType = hfRes.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const json = (await hfRes.json()) as {
+          video?: { url?: string };
+          url?: string;
+          output?: string;
+        };
+        const videoUrl = json.video?.url || json.url || json.output;
+        if (!videoUrl) {
+          res.status(502).json({
+            error: 'Hugging Face returned JSON without a playable MP4 URL.',
+          });
+          return;
+        }
+        const mediaRes = await fetch(videoUrl);
+        if (!mediaRes.ok) {
+          res.status(502).json({ error: 'Could not download generated MP4 from provider URL.' });
+          return;
+        }
+        const buf = Buffer.from(await mediaRes.arrayBuffer());
+        res.setHeader('Content-Type', 'video/mp4');
+        res.send(buf);
+        return;
+      }
+
+      const buf = Buffer.from(await hfRes.arrayBuffer());
+      res.setHeader('Content-Type', contentType.startsWith('video/') ? contentType : 'video/mp4');
+      res.send(buf);
+    } catch (err) {
+      res.status(500).json({
+        error:
+          err instanceof Error
+            ? `Video generation error: ${err.message}`
+            : 'Failed to contact Hugging Face text-to-video API.',
       });
     }
   });

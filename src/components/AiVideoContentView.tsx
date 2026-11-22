@@ -1,11 +1,16 @@
-import { useState } from 'react';
-import { Check, Copy, Loader2, Video } from 'lucide-react';
-import type { MarketTrack } from '../utils/pitchPresenter';
+import { useEffect, useState } from 'react';
+import { Check, Copy, Download, KeyRound, Loader2, Video } from 'lucide-react';
+import {
+  VIDEO_QUALITY_OPTIONS,
+  type MarketTrack,
+  type VideoQualityModelId,
+} from '../utils/pitchPresenter';
 
 type VideoType = 'Product Showcase' | 'Customer Story' | 'Before & After';
 
 interface VideoConcept {
   title: string;
+  video_prompt: string;
   hook: string;
   scenes: Array<{ label: string; visual: string; line: string }>;
   cta: string;
@@ -13,12 +18,16 @@ interface VideoConcept {
 
 interface AiVideoContentViewProps {
   activeMarket: MarketTrack;
+  hfToken: string;
+  onOpenSettings: () => void;
 }
 
 const VIDEO_TYPES: VideoType[] = ['Product Showcase', 'Customer Story', 'Before & After'];
 
 const INITIAL_CONCEPT: VideoConcept = {
   title: '60-Second Booking Transformation',
+  video_prompt:
+    'Warm natural light inside a modern boutique clinic reception, smooth slow push-in camera shot on a receptionist smiling and checking confirmed appointments on a clean tablet, photorealistic commercial look, crisp focus, 5 seconds.',
   hook: 'Still asking new customers to fill out a contact form and wait until tomorrow?',
   scenes: [
     {
@@ -40,17 +49,37 @@ const INITIAL_CONCEPT: VideoConcept = {
   cta: 'Want to see how this looks on your website? Reply and I will send a free mockup.',
 };
 
-export function AiVideoContentView({ activeMarket }: AiVideoContentViewProps) {
+export function AiVideoContentView({
+  activeMarket,
+  hfToken,
+  onOpenSettings,
+}: AiVideoContentViewProps) {
   const [businessOrProduct, setBusinessOrProduct] = useState('');
   const [videoType, setVideoType] = useState<VideoType>('Product Showcase');
+  const [selectedModelId, setSelectedModelId] = useState<VideoQualityModelId>(
+    VIDEO_QUALITY_OPTIONS[0].modelId
+  );
+
   const [concept, setConcept] = useState<VideoConcept>(INITIAL_CONCEPT);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [videoObjectUrl, setVideoObjectUrl] = useState<string | null>(null);
+  const [stageMessage, setStageMessage] = useState<string | null>(null);
+  const [tokenNotice, setTokenNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (videoObjectUrl) {
+        URL.revokeObjectURL(videoObjectUrl);
+      }
+    };
+  }, [videoObjectUrl]);
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setTokenNotice(null);
 
     if (!businessOrProduct.trim()) {
       setError('Please enter a Business or Product Name first.');
@@ -58,8 +87,11 @@ export function AiVideoContentView({ activeMarket }: AiVideoContentViewProps) {
     }
 
     setIsGenerating(true);
+    setStageMessage('Step 1: Writing a 5-second commercial video prompt...');
+
     try {
-      const res = await fetch('/api/video-concept', {
+      // Step 1: Gemini creates the 5-second commercial prompt + fallback script/storyboard
+      const conceptRes = await fetch('/api/video-concept', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -68,26 +100,82 @@ export function AiVideoContentView({ activeMarket }: AiVideoContentViewProps) {
           market: activeMarket === 'LOCAL' ? 'Local Market' : 'Global Market',
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || 'Could not generate video concept.');
+      const conceptData = await conceptRes.json();
+      if (!conceptRes.ok) {
+        throw new Error(conceptData?.error || 'Could not create the video prompt.');
       }
-      setConcept({
-        title: data.title || `${videoType} for ${businessOrProduct.trim()}`,
-        hook: data.hook || '',
-        scenes: Array.isArray(data.scenes) ? data.scenes : [],
-        cta: data.cta || '',
+
+      const generatedPrompt =
+        String(conceptData.video_prompt || '').trim() ||
+        `Realistic 5-second commercial video showcasing ${businessOrProduct.trim()} in a ${videoType.toLowerCase()} style, bright natural studio lighting, smooth camera push-in.`;
+
+      const nextConcept: VideoConcept = {
+        title: conceptData.title || `${videoType} for ${businessOrProduct.trim()}`,
+        video_prompt: generatedPrompt,
+        hook: conceptData.hook || '',
+        scenes: Array.isArray(conceptData.scenes) ? conceptData.scenes : [],
+        cta: conceptData.cta || '',
+      };
+      setConcept(nextConcept);
+
+      // Step 3 fallback: No Hugging Face token saved yet
+      if (!hfToken.trim()) {
+        setTokenNotice(
+          'Add your Hugging Face token in API Settings to render a playable MP4 clip. Your generated video script and 5-second prompt are ready below.'
+        );
+        return;
+      }
+
+      // Step 2: Send prompt to Hugging Face text-to-video endpoint
+      const selectedOption = VIDEO_QUALITY_OPTIONS.find((o) => o.modelId === selectedModelId);
+      setStageMessage(
+        `Step 2: Rendering MP4 clip with ${selectedOption?.label || selectedModelId}...`
+      );
+
+      const videoRes = await fetch('/api/video-generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-hf-token': hfToken.trim(),
+        },
+        body: JSON.stringify({
+          prompt: generatedPrompt,
+          model_id: selectedModelId,
+        }),
       });
+
+      if (!videoRes.ok) {
+        let errMsg = `Video generation failed (${videoRes.status}).`;
+        try {
+          const errJson = (await videoRes.json()) as { error?: string };
+          if (errJson?.error) errMsg = errJson.error;
+        } catch {
+          // ignore
+        }
+        setTokenNotice(
+          `${errMsg} Showing your generated video script and prompt below as a fallback.`
+        );
+        return;
+      }
+
+      const mp4Blob = await videoRes.blob();
+      if (videoObjectUrl) {
+        URL.revokeObjectURL(videoObjectUrl);
+      }
+      const nextUrl = URL.createObjectURL(mp4Blob);
+      setVideoObjectUrl(nextUrl);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not generate video concept.');
+      setError(err instanceof Error ? err.message : 'Could not generate video.');
     } finally {
       setIsGenerating(false);
+      setStageMessage(null);
     }
   };
 
   const handleCopyScript = async () => {
     const text = [
       `${concept.title}`,
+      `5-Second Video Prompt: ${concept.video_prompt}`,
       `Hook: ${concept.hook}`,
       '',
       ...concept.scenes.map((s) => `${s.label}\nVisual: ${s.visual}\nLine: ${s.line}`),
@@ -103,6 +191,10 @@ export function AiVideoContentView({ activeMarket }: AiVideoContentViewProps) {
     }
   };
 
+  const downloadFilename = `${(businessOrProduct.trim() || 'pal-agency-video')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')}.mp4`;
+
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 items-start">
       {/* Left: Video Request Card */}
@@ -110,7 +202,7 @@ export function AiVideoContentView({ activeMarket }: AiVideoContentViewProps) {
         <div className="border-b border-[#E2E8F0] pb-4">
           <h1 className="text-base font-bold text-[#0F172A]">AI Video &amp; Content</h1>
           <p className="mt-0.5 text-xs text-[#475569]">
-            Create a simple, ready-to-film short video concept for any client or product.
+            Turn any business and video style into a playable 5-second commercial clip and script.
           </p>
         </div>
 
@@ -152,6 +244,37 @@ export function AiVideoContentView({ activeMarket }: AiVideoContentViewProps) {
             </div>
           </div>
 
+          <div className="space-y-1.5">
+            <label htmlFor="video-quality-speed" className="block text-xs font-semibold text-[#475569]">
+              Video Quality / Speed
+            </label>
+            <select
+              id="video-quality-speed"
+              value={selectedModelId}
+              onChange={(e) => setSelectedModelId(e.target.value as VideoQualityModelId)}
+              className="w-full rounded-lg border border-[#E2E8F0] bg-[#FFFFFF] px-3.5 py-2.5 text-sm text-[#0F172A] focus:border-[#2563EB] focus:outline-none cursor-pointer"
+            >
+              {VIDEO_QUALITY_OPTIONS.map((option) => (
+                <option key={option.modelId} value={option.modelId}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {!hfToken.trim() && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-[#F59E0B]/40 bg-[#FFFBEB] px-3.5 py-2.5 text-xs text-[#92400E]">
+              <span>Save your Hugging Face token in API Settings to render MP4 clips.</span>
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className="shrink-0 font-semibold text-[#B45309] underline cursor-pointer"
+              >
+                Open API Settings
+              </button>
+            </div>
+          )}
+
           {error && (
             <div
               role="alert"
@@ -169,47 +292,110 @@ export function AiVideoContentView({ activeMarket }: AiVideoContentViewProps) {
             {isGenerating ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Generating Video Concept...</span>
+                <span>Generating Video...</span>
               </>
             ) : (
               <>
                 <Video className="h-4 w-4" />
-                <span>Generate Video Concept</span>
+                <span>Generate Video</span>
               </>
             )}
           </button>
+
+          {stageMessage && (
+            <p className="text-center text-xs font-medium text-[#2563EB]">{stageMessage}</p>
+          )}
         </form>
       </section>
 
-      {/* Right: Clean Preview Box */}
+      {/* Right: Clean Preview Box (MP4 Player + Download + Storyboard Fallback) */}
       <section className="lg:col-span-7 rounded-xl border border-[#E2E8F0] bg-[#FFFFFF] p-6 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] pb-4">
           <div>
             <span className="text-xs font-semibold uppercase tracking-wide text-[#2563EB]">
-              Video Concept Preview
+              Video Preview
             </span>
             <h2 className="mt-0.5 text-base font-bold text-[#0F172A]">{concept.title}</h2>
           </div>
 
-          <button
-            type="button"
-            onClick={handleCopyScript}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#10B981] px-4 py-2 text-xs font-semibold text-[#FFFFFF] hover:bg-[#059669] transition-colors cursor-pointer whitespace-nowrap"
-          >
-            {copied ? (
-              <>
-                <Check className="h-3.5 w-3.5" />
-                <span>Copied!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="h-3.5 w-3.5" />
-                <span>Copy Script</span>
-              </>
+          <div className="flex flex-wrap items-center gap-2">
+            {videoObjectUrl && (
+              <a
+                href={videoObjectUrl}
+                download={downloadFilename}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[#2563EB] px-4 py-2 text-xs font-semibold text-[#FFFFFF] hover:bg-[#1D4ED8] transition-colors whitespace-nowrap"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span>Download MP4</span>
+              </a>
             )}
-          </button>
+
+            <button
+              type="button"
+              onClick={handleCopyScript}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#10B981] px-4 py-2 text-xs font-semibold text-[#FFFFFF] hover:bg-[#059669] transition-colors cursor-pointer whitespace-nowrap"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-3.5 w-3.5" />
+                  <span>Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5" />
+                  <span>Copy Script</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
+        {tokenNotice && (
+          <div
+            role="status"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#F59E0B] bg-[#FFFBEB] px-4 py-3 text-xs font-medium text-[#92400E]"
+          >
+            <span>{tokenNotice}</span>
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="inline-flex items-center gap-1.5 rounded-md border border-[#F59E0B] bg-[#FFFFFF] px-3 py-1.5 text-xs font-semibold text-[#92400E] hover:bg-[#FEF3C7] cursor-pointer whitespace-nowrap"
+            >
+              <KeyRound className="h-3.5 w-3.5" />
+              <span>API Settings</span>
+            </button>
+          </div>
+        )}
+
+        {/* Playable MP4 Clip Player when generated */}
+        {videoObjectUrl && (
+          <div className="rounded-xl border border-[#E2E8F0] border-t-4 border-t-[#10B981] bg-[#F8FAFC] p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wide text-[#059669]">
+                Generated MP4 Clip Ready
+              </span>
+              <span className="text-xs font-medium text-[#475569]">5-second commercial cut</span>
+            </div>
+            <video
+              src={videoObjectUrl}
+              controls
+              autoPlay
+              loop
+              playsInline
+              className="w-full rounded-lg border border-[#E2E8F0] bg-[#FFFFFF]"
+            />
+          </div>
+        )}
+
+        {/* 5-Second Commercial Prompt */}
+        <div className="rounded-xl border border-[#E2E8F0] border-t-4 border-t-[#2563EB] bg-[#F8FAFC] p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-[#2563EB]">
+            5-Second Commercial Video Prompt
+          </div>
+          <p className="mt-1 text-sm leading-relaxed text-[#0F172A]">{concept.video_prompt}</p>
+        </div>
+
+        {/* Fallback / Companion Script & Storyboard */}
         <div className="rounded-xl border border-[#E2E8F0] border-t-4 border-t-[#F59E0B] bg-[#FFFBEB]/40 p-4">
           <div className="text-xs font-semibold uppercase tracking-wide text-[#D97706]">
             Opening 3-Second Hook

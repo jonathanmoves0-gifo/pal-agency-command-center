@@ -4,7 +4,9 @@ import {
   buildPitchPresentation,
   buildSeedPitchForTrack,
   getStorageKeyForTrack,
+  isAllowedVideoModel,
   recommendServiceForLead,
+  VIDEO_QUALITY_OPTIONS,
   WEBSITE_TEMPLATES,
 } from './pitchPresenter';
 
@@ -55,4 +57,15 @@ test('buildPitchPresentation always returns a clean zero-pricing message and sam
   assert.ok(presentation.messageBody.includes(seed.business_name));
   assert.ok(!/\$|£|€|retainer|month/i.test(presentation.messageBody));
   assert.equal(WEBSITE_TEMPLATES.length, 4);
+});
+
+test('VIDEO_QUALITY_OPTIONS defines exact Fast Draft and High Detail Hugging Face model IDs', () => {
+  assert.equal(VIDEO_QUALITY_OPTIONS.length, 2);
+  assert.equal(VIDEO_QUALITY_OPTIONS[0].label, 'Fast Draft (LTX-Video)');
+  assert.equal(VIDEO_QUALITY_OPTIONS[0].modelId, 'Lightricks/LTX-Video-0.9.8-13B-distilled');
+  assert.equal(VIDEO_QUALITY_OPTIONS[1].label, 'High Detail (Wan 2.2)');
+  assert.equal(VIDEO_QUALITY_OPTIONS[1].modelId, 'Wan-AI/Wan2.2-TI2V-5B');
+  assert.equal(isAllowedVideoModel('Lightricks/LTX-Video-0.9.8-13B-distilled'), true);
+  assert.equal(isAllowedVideoModel('Wan-AI/Wan2.2-TI2V-5B'), true);
+  assert.equal(isAllowedVideoModel('unknown/model'), false);
 });

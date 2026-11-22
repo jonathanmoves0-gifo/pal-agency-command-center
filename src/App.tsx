@@ -4,6 +4,7 @@ import { streamSsePost } from './utils/sseClient';
 import {
   buildSeedPitchForTrack,
   getStorageKeyForTrack,
+  HF_TOKEN_STORAGE_KEY,
   type IndustryTemplate,
   type MarketTrack,
 } from './utils/pitchPresenter';
@@ -11,6 +12,7 @@ import { LightTopNav, type LightWorkspaceTab } from './components/LightTopNav';
 import { FindPitchLeadsView, type PitchProgress } from './components/FindPitchLeadsView';
 import { AiVideoContentView } from './components/AiVideoContentView';
 import { WebsiteTemplatesView } from './components/WebsiteTemplatesView';
+import { ApiSettingsModal } from './components/ApiSettingsModal';
 
 const IDLE_PROGRESS: PitchProgress = {
   step1: 'pending',
@@ -45,6 +47,11 @@ function loadTrackLeads(track: MarketTrack): LeadRecord[] {
 export default function App() {
   const [activeMarket, setActiveMarket] = useState<MarketTrack>('LOCAL');
   const [activeTab, setActiveTab] = useState<LightWorkspaceTab>('find_pitch');
+
+  const [hfToken, setHfToken] = useState<string>(
+    () => localStorage.getItem(HF_TOKEN_STORAGE_KEY) || ''
+  );
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const [leadsByTrack, setLeadsByTrack] = useState<Record<MarketTrack, LeadRecord[]>>(() => ({
     LOCAL: loadTrackLeads('LOCAL'),
@@ -81,6 +88,15 @@ export default function App() {
       setProgress(currentLead ? COMPLETED_PROGRESS : IDLE_PROGRESS);
     }
   }, [activeMarket, currentLead, isRunning]);
+
+  const handleSaveHfToken = (token: string) => {
+    setHfToken(token);
+    if (token) {
+      localStorage.setItem(HF_TOKEN_STORAGE_KEY, token);
+    } else {
+      localStorage.removeItem(HF_TOKEN_STORAGE_KEY);
+    }
+  };
 
   const saveLeadToMarket = useCallback((track: MarketTrack, newLead: LeadRecord) => {
     setLeadsByTrack((prev) => {
@@ -119,7 +135,9 @@ export default function App() {
       }
 
       if (evt.type === 'error' || evt.type === 'prospect_error') {
-        setErrorMessage(evt.message || 'Could not finish building the client pitch. Please try again.');
+        setErrorMessage(
+          evt.message || 'Could not finish building the client pitch. Please try again.'
+        );
       }
     },
     [saveLeadToMarket]
@@ -188,6 +206,8 @@ export default function App() {
         }}
         activeTab={activeTab}
         onSelectTab={setActiveTab}
+        hasHfToken={Boolean(hfToken.trim())}
+        onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
       <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 sm:px-6">
@@ -209,12 +229,25 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'ai_video' && <AiVideoContentView activeMarket={activeMarket} />}
+        {activeTab === 'ai_video' && (
+          <AiVideoContentView
+            activeMarket={activeMarket}
+            hfToken={hfToken}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+          />
+        )}
 
         {activeTab === 'website_templates' && (
           <WebsiteTemplatesView onUseTemplateForClient={handleUseTemplateForClient} />
         )}
       </main>
+
+      <ApiSettingsModal
+        isOpen={isSettingsOpen}
+        savedToken={hfToken}
+        onSaveToken={handleSaveHfToken}
+        onClose={() => setIsSettingsOpen(false)}
+      />
     </div>
   );
 }
