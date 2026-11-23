@@ -235,6 +235,10 @@ export function leadsToCsv(leads: LeadRecord[]): string {
     'domain',
     'niche',
     'market',
+    'decision_maker_name',
+    'decision_maker_role',
+    'outreach_decision',
+    'detected_problems',
     'intake_mode',
     'total_score',
     'pain_signal',
@@ -249,6 +253,10 @@ export function leadsToCsv(leads: LeadRecord[]): string {
     'cold_email_subject',
     'cold_email_body',
     'social_dm',
+    'contact_emails',
+    'contact_phones',
+    'whatsapp_numbers',
+    'address',
     'created_at',
   ];
 
@@ -258,6 +266,10 @@ export function leadsToCsv(leads: LeadRecord[]): string {
     lead.domain,
     lead.niche,
     lead.market,
+    lead.decision_maker_name ?? '',
+    lead.decision_maker_role ?? '',
+    lead.outreach_decision ?? 'pending',
+    (lead.detected_problems ?? []).join('; '),
     lead.intake_mode,
     lead.total_score,
     lead.sub_scores.pain_signal,
@@ -272,6 +284,10 @@ export function leadsToCsv(leads: LeadRecord[]): string {
     lead.outreach_pack?.cold_email.subject ?? '',
     lead.outreach_pack?.cold_email.body ?? '',
     lead.outreach_pack?.social_dm ?? '',
+    (lead.contact_emails ?? []).join('; '),
+    (lead.contact_phones ?? []).join('; '),
+    (lead.whatsapp_numbers ?? []).join('; '),
+    lead.address ?? '',
     lead.created_at,
   ]);
 

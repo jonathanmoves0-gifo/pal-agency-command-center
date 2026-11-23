@@ -1,87 +1,82 @@
 # Pal Agency Operating Playbook
 
-Reusable operating rules governing interface standards, dual-market isolation, execution workflow, outreach discipline, and core delivery systems across all Pal Agency builds and client pipelines.
+Operating rules governing the White Executive Studio visual language, dual-market context isolation, client acquisition workflow, outreach discipline, and our three core B2B delivery pillars across Pal Agency builds.
 
 ---
 
-## 1. Visual & UI Standards
+## 1. Visual & Plain-English Interface Standards
 
-Every Pal Agency application, internal console, and client-facing preview must adhere to a sharp, utilitarian dark-mode studio aesthetic.
+Every Pal Agency application, internal workspace, and client-facing preview follows our **White Executive Studio** design system:
 
 - **Surface & Border System**:
-  - Primary canvas: deep charcoal (`#0D0F12`).
-  - Elevated structural containers: muted slate (`#12151A` / `#161A20`) separated strictly by `1px` crisp borders (`#242830`).
-  - Sharp architectural corners (`0px–4px` maximum radius); single-level container elevation only.
+  - Primary canvas: Pure White (`#FFFFFF`) and Soft Alabaster (`#F8FAFC`).
+  - Cards, tables, and preview frames use crisp `1px solid #E2E8F0` hairline borders with generous spacing and zero nested cards-within-cards.
 - **Typography & Status Badges**:
-  - High-contrast text (`#ECEFF4` primary, `#C9D1D9` secondary, `#8B949E` muted metadata).
-  - Enforce monospace typography with tabular numerals (`font-mono`, `tabular-nums`) for all scores, timestamps, domain strings, and status badges (`APPROVED_FOR_OUTREACH`, `NEEDS_REVIEW`, `PASS`).
-  - Keep metadata unboxed using clean typographic separators (`·`, `/`) rather than decorative pill capsules.
+  - Clean sans-serif typography (`Plus Jakarta Sans`) using `#0F172A` for headings and `#475569` for secondary metadata, with `tabular-nums` for scores and tables.
+  - Plain-English status badges paired with accessible high-contrast fills:
+    - **Ready to Contact (75+)**: Emerald (`#ECFDF5` fill, `#065F46` text)
+    - **Needs Quick Review (50–74)**: Amber (`#FFFBEB` fill, `#92400E` text)
+    - **Not a Fit (<50)**: Neutral Slate (`#F1F5F9` fill, `#475569` text)
+- **Plain-English Rule**:
+  - Never expose backend node names, code syntax (`//`, snake_case identifiers), or raw developer logs in user-facing screens. Translate every pipeline stage, score dimension, and connection indicator into everyday business language.
 - **Strict Visual Bans**:
-  - **No** generic SaaS gradients (purple/indigo/cyan mesh backdrops or glowing CTA buttons).
-  - **No** rounded pastel cards, glassmorphism blur cards, or soft drop shadows.
-  - **No** dummy placeholder metrics, fabricated KPI scoreboards, ornamental footer telemetry tickers, or decorative pulsing dots on static labels.
+  - **No** dark-mode neon themes, glowing buttons, purple gradients, or heavy left-border stripes (`border-l-4`).
+  - **No** dummy placeholder KPIs, fabricated percentages, or decorative pulsing dots on static labels.
 
 ---
 
 ## 2. Dual-Market Track Separation (`AFRICA_TRACK` vs. `INTERNATIONAL_TRACK`)
 
-Market context must never bleed across pipelines. `AFRICA_TRACK` and `INTERNATIONAL_TRACK` operate with strictly partitioned storage, calibration memory, scoring heuristics, and offer positioning.
+Market context remains strictly separated so scoring benchmarks and offer framing fit the prospect's real operating environment:
 
 | Dimension | `AFRICA_TRACK` | `INTERNATIONAL_TRACK` |
 | :--- | :--- | :--- |
-| **Target Geography** | Local and regional African markets (e.g., Lagos, Nairobi, Accra, Cape Town, Johannesburg). | US, UK, and global Tier-1 English-speaking markets. |
-| **Lead & Memory Isolation** | Separate lead store and isolated `reward_memory` namespace; winners/penalties from `AFRICA_TRACK` calibrate `AFRICA_TRACK` only. | Separate lead store and isolated `reward_memory` namespace; winners/penalties from `INTERNATIONAL_TRACK` calibrate `INTERNATIONAL_TRACK` only. |
-| **Scoring Context** | Weights WhatsApp/mobile-first friction, cash/deposit trust barriers, Google Business Profile gaps, and local responsiveness. | Weights PPC/ad-spend leakage, static callback forms, after-hours calendar drop-off, and CRM speed-to-lead. |
-| **Positioning & Offer Framing** | Emphasizes mobile conversion speed, WhatsApp/instant booking triage, and verifiable credibility assets. | Emphasizes recoverable ad spend, automated 24/7 consultation capture, and direct-response UGC creative. |
-
-**Isolation Rule**: Never inject `reward_memory` calibration examples, outreach templates, or domain benchmarks from one track into the qualifier or outreach architect of the other track.
+| **Target Geography** | Regional African markets (e.g., Lagos, Nairobi, Accra, Cape Town, Johannesburg). | US, UK, and Tier-1 international B2B and local service markets. |
+| **Lead & Memory Isolation** | Separate market tracking and calibration context so regional patterns calibrate regional scoring cleanly. | Separate market tracking and calibration context so international benchmarks calibrate Tier-1 scoring cleanly. |
+| **Scoring Context** | Weights mobile usability, WhatsApp/instant booking gaps, local credibility proof, and fast response handling. | Weights paid-traffic landing leaks, static callback forms, after-hours booking drop-off, and CRM triage latency. |
+| **Positioning & Offer Framing** | Emphasizes clean mobile websites, instant WhatsApp & calendar booking, and automated inquiry capture. | Emphasizes high-converting service landing pages, 24/7 AI receptionists, and custom agentic workflow routing. |
 
 ---
 
 ## 3. Core Execution Workflow (`Copy → Pivot → Prove → Soft Close`)
 
-Every client acquisition and asset-building cycle follows four sequential stages:
+Every client acquisition cycle follows four sequential stages:
 
 1. **Copy**:
-   - Identify proven offers, messaging angles, landing structures, and creative proof formats from real market winners (anchored in positive-reward leads such as `+25 Booked Demo` and `+10 Positive Reply`).
-   - Extract the underlying conversion mechanism—never copy surface hype.
+   - Extract winning messaging patterns and offer hooks from real positive outcomes (`Booked Meeting +25` and `Positive Reply +10`).
 2. **Pivot**:
-   - Adapt the winning angle to the specific prospect's diagnosed operational bottleneck or missed lead/booking leak (e.g., pivoting a proven cosmetic dentistry triage angle to an orthodontic clinic running ads to a static contact form).
-   - Reference concrete, observable friction on their live domain or funnel.
+   - Adapt the winning mechanism to the exact website conversion gap, slow lead follow-up, or manual intake bottleneck spotted on the prospect's business.
 3. **Prove**:
-   - Generate a customized, tangible preview or proof asset tailored to their business *before* pitching (e.g., a tailored Web Kit booking flow mockup, a 90-second leak teardown, or a custom 3-beat UGC hook script).
-   - Anchor every claim to something the prospect can inspect directly.
+   - Build a concrete, inspectable proof asset *before* pitching — either a live **Website Preview** or a visual **AI & Agentic Solution Blueprint** tailored to their business domain.
 4. **Soft Close**:
-   - Open conversations with low-friction, curiosity-driven questions centered on the custom preview—never demanding a 30-minute discovery call upfront.
-   - Example soft closes: *"Worth sending the preview link over?"* / *"Open to a 90-second look at what we mocked up for your booking page?"*
+   - Open conversations with a low-friction, curiosity-led question centered on sharing the custom preview — never demanding a long sales call upfront.
+   - Example: *"Put together a quick website booking preview for your clinic — worth sending the link over?"*
 
 ---
 
 ## 4. Outreach & Pricing Discipline
 
 - **Zero-Pricing Soft Closes**:
-  - **Strictly prohibit** quoting prices, monthly retainers, setup fees, or package tiers in initial cold emails, social DMs, or follow-up sequences.
-  - Pricing is introduced *only* after value has been established, the prospect has engaged with the custom proof asset, and mutual fit is confirmed.
+  - **Strictly prohibit** quoting prices, monthly retainers, setup fees, or package tiers in initial cold emails, LinkedIn DMs, or follow-up sequences.
+  - Discuss pricing only after the prospect inspects the custom preview and confirms operational fit.
 - **Plain, Human Communication**:
-  - Write cold emails, LinkedIn/Instagram DMs, and 3-step follow-ups in plain, direct, peer-level language.
-  - Lead with the exact bottleneck observed on the prospect's domain or customer journey.
-  - Eliminate generic AI buzzwords, hype phrasing, excessive exclamation marks, and inflated agency claims (*"revolutionize"*, *"skyrocket"*, *"unlock 10x ROI"*, *"game-changing"*).
-  - Keep first-touch emails concise (80–120 words) and social DMs to 2–3 sentences.
+  - Keep first-touch emails direct and conversational (80–120 words) and LinkedIn/direct messages to 2–3 sentences.
+  - Lead with the exact website or workflow bottleneck observed on the prospect's domain, avoiding inflated buzzwords or hype.
 
 ---
 
-## 5. Three Core Reusable Agency Systems
+## 5. Three Core B2B Agency Pillars
 
-All client engagements map to one or more of three modular, productized delivery systems:
+All Pal Agency client engagements map strictly to three modular technology pillars:
 
-### A. Web Development (Rapid Web Kits)
-- High-converting, fast-loading, mobile-ready websites and service-specific landing pages built to close local and international conversion leaks.
-- Replaces generic homepage PPC destinations and slow multi-step contact forms with focused treatment/service capture funnels, local SEO/schema proof layers, and clean booking handoffs.
+### A. Professional Website Design & High-Converting Landing Pages
+- Fast-loading, mobile-ready websites and dedicated service landing pages engineered to turn paid and organic traffic into qualified inquiries.
+- Replaces static callback forms and generic homepages with focused consultation booking flows, verified client proof strips, and clean mobile navigation.
 
-### B. AI Intelligence & Booking Agents
-- 24/7 automated lead capture, reception, pre-qualification, and appointment booking workflows.
-- Resolves after-hours drop-off and slow callback lag via instant conversational triage widgets, missed-call/form SMS recovery bridges, and direct calendar/CRM sync.
+### B. AI Business Automation
+- 24/7 AI receptionists, instant lead capture, automated SMS/email follow-up sequences, and live calendar/CRM synchronization.
+- Eliminates after-hours inquiry drop-off and slow callback lag across service clinics, property agencies, and local businesses.
 
-### C. AI UGC Services (UGC Studio)
-- Direct-response short-form (`9:16` vertical, `4:5` feed) UGC ad scripts, 3-second opening hooks, shot-by-shot storyboards, and creative briefs engineered from proven market angles.
-- Pairs real customer pain points and diagnosed funnel leaks with testable creator personas and visual proof beats ready for immediate production.
+### C. Custom Agentic AI Systems
+- Autonomous multi-step AI agents that research incoming inquiries, qualify client fit against custom criteria, generate structured decision briefs, and route opportunities directly into team calendars and CRMs.
+- Built for high-value B2B firms and scaling service teams seeking end-to-end operational automation without extra manual triage.

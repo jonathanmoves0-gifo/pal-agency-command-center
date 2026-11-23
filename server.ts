@@ -8,36 +8,34 @@ import type {
   ProspectInput,
 } from './src/shared/types';
 import { parseBatchLines } from './src/utils/pipelineLogic';
-import { InferenceClient } from '@huggingface/inference';
 import {
-  DEFAULT_VIDEO_MODEL_ID,
-  DEFAULT_VIDEO_PROVIDER_ID,
-  formatVideoErrorMessage,
-  isAllowedVideoModel,
-  isAllowedVideoProvider,
-  type VideoModelId,
-  type VideoProviderId,
-} from './src/utils/pitchPresenter';
+  attemptCloudVideoRender,
+  generateRealisticVideoPlan,
+  parseVideoStudioRequest,
+} from './server/videoStudio';
+import type { VideoStudioStreamEvent } from './src/utils/videoBlueprint';
 import {
   BATCH_COOLDOWN_MS,
   getApiHealthStatus,
-  invokeStructuredLlm,
   sleepWithAbort,
 } from './server/llmClient';
 import { buildScoutGraph, buildSignalHunterGraph } from './server/signalGraph';
+import type { AuditedBusinessData } from './server/webCrawler';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-function initSse(res: Response): (event: PipelineStreamEvent) => void {
+function initSse<T = PipelineStreamEvent>(res: Response): (event: T) => void {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders?.();
 
-  return (event: PipelineStreamEvent) => {
+  return (event: T) => {
     if (res.writableEnded) return;
-    res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+    const typeName =
+      event && typeof event === 'object' && 'type' in event ? String(event.type) : 'message';
+    res.write(`event: ${typeName}\ndata: ${JSON.stringify(event)}\n\n`);
   };
 }
 
@@ -63,7 +61,7 @@ function attachAbortController(req: Request, res: Response): AbortController {
 }
 
 async function runSequentialProspects(opts: {
-  prospects: ProspectInput[];
+  prospects: Array<{ prospect: ProspectInput; preAuditedData?: AuditedBusinessData }>;
   calibration: CalibrationContext;
   send: (event: PipelineStreamEvent) => void;
   signal: AbortSignal;
@@ -74,7 +72,8 @@ async function runSequentialProspects(opts: {
 
   for (let i = 0; i < total; i++) {
     if (signal.aborted) break;
-    const prospect = prospects[i];
+    const item = prospects[i];
+    const prospect = item.prospect;
 
     send({
       type: 'prospect_started',
@@ -82,7 +81,7 @@ async function runSequentialProspects(opts: {
       prospect_total: total,
       business_name: prospect.business_name,
       domain: prospect.domain,
-      message: `Processing prospect ${i + 1}/${total}: ${prospect.business_name}`,
+      message: `Processing qualified business ${i + 1}/${total}: ${prospect.business_name}`,
       timestamp: new Date().toISOString(),
     });
 
@@ -105,6 +104,7 @@ async function runSequentialProspects(opts: {
       const finalState = await graph.invoke({
         prospect,
         calibration,
+        pre_audited_data: item.preAuditedData,
       });
 
       if (finalState.lead_record) {
@@ -185,12 +185,14 @@ async function startServer() {
       await runSequentialProspects({
         prospects: [
           {
-            business_name: businessName,
-            domain,
-            niche,
-            market: marketRaw,
-            discovery_notes: discoveryNotes,
-            intake_mode: 'single',
+            prospect: {
+              business_name: businessName,
+              domain,
+              niche,
+              market: marketRaw,
+              discovery_notes: discoveryNotes,
+              intake_mode: 'single',
+            },
           },
         ],
         calibration,
@@ -244,7 +246,7 @@ async function startServer() {
 
     send({
       type: 'run_started',
-      message: `Launching Autonomous Niche Scout for "${niche}" in "${region}"...`,
+      message: `Searching live business directories for ${niche} in ${region}...`,
       timestamp: new Date().toISOString(),
     });
 
@@ -266,27 +268,39 @@ async function startServer() {
         existingLeads,
       });
 
-      const prospects = scoutResult.discoveredProspects ?? [];
+      const qualified = scoutResult.qualifiedProspects ?? [];
+      const rawFound = scoutResult.rawFoundCount ?? qualified.length;
+      const filteredOut = scoutResult.filteredOutCount ?? 0;
+
       send({
         type: 'scout_completed',
-        prospect_total: prospects.length,
+        prospect_total: qualified.length,
         provider: scoutResult.providerUsed,
         message:
-          prospects.length > 0
-            ? `Scout found ${prospects.length} net-new prospects. Feeding sequentially into Signal Hunter...`
-            : 'No net-new businesses found outside existing localStorage leads.',
+          rawFound > 0
+            ? `Found ${rawFound} businesses → Kept ${qualified.length} with verified WhatsApp + Decision Maker (${filteredOut} filtered out)`
+            : 'No live public businesses matched this search right now.',
         data: {
-          prospects: prospects.map((p) => ({
-            business_name: p.business_name,
-            domain: p.domain,
+          raw_found_count: rawFound,
+          qualified_count: qualified.length,
+          filtered_out_count: filteredOut,
+          missing_phone_count: scoutResult.missingPhoneCount ?? 0,
+          missing_decision_maker_count: scoutResult.missingDecisionMakerCount ?? 0,
+          prospects: qualified.map((item) => ({
+            business_name: item.prospect.business_name,
+            domain: item.prospect.domain,
+            decision_maker_name: item.crawlData.decisionMakers[0]?.name,
           })),
         },
         timestamp: new Date().toISOString(),
       });
 
-      if (prospects.length > 0) {
+      if (qualified.length > 0) {
         await runSequentialProspects({
-          prospects,
+          prospects: qualified.map((item) => ({
+            prospect: item.prospect,
+            preAuditedData: item.crawlData,
+          })),
           calibration,
           send,
           signal: controller.signal,
@@ -296,7 +310,7 @@ async function startServer() {
 
       send({
         type: 'run_completed',
-        message: `Autonomous Niche Scout completed (${prospects.length} prospects processed).`,
+        message: `Live search finished: ${qualified.length} verified leads added (${filteredOut} filtered out without WhatsApp + decision maker).`,
         timestamp: new Date().toISOString(),
       });
     } catch (err) {
@@ -339,7 +353,7 @@ async function startServer() {
 
     try {
       await runSequentialProspects({
-        prospects: items,
+        prospects: items.map((prospect) => ({ prospect })),
         calibration,
         send,
         signal: controller.signal,
@@ -364,210 +378,121 @@ async function startServer() {
     }
   });
 
-  // 4. AI Video & Content concept + 5-second commercial video prompt generator
-  app.post('/api/video-concept', async (req, res) => {
-    const body = req.body ?? {};
-    const businessName = String(body.business_name ?? '').trim();
-    const videoType = String(body.video_type ?? '').trim();
-    const market = String(body.market ?? 'Global Market').trim();
+  // 4. Live Video Studio SSE Generation Pipeline (3-stage progress + Realistic Anti-Slop Video Plan + Render Attempt)
+  app.post('/api/video-studio/generate', async (req, res) => {
+    const input = parseVideoStudioRequest((req.body ?? {}) as Record<string, unknown>);
+    if (!input.topic) {
+      res.status(400).json({ error: 'Please enter a Business, Brand, or Video Topic first.' });
+      return;
+    }
 
-    if (!businessName || !videoType) {
-      res.status(400).json({ error: 'Business or Product Name and Video Type are required.' });
+    const send = initSse<VideoStudioStreamEvent>(res);
+    const controller = attachAbortController(req, res);
+
+    try {
+      // Stage 1: Structuring Realistic Scene
+      send({
+        type: 'stage_started',
+        step: 1,
+        message: `Structuring realistic scene for ${input.topic} (${input.cameraFraming})...`,
+        timestamp: new Date().toISOString(),
+      });
+      await sleepWithAbort(220, controller.signal);
+      send({
+        type: 'stage_completed',
+        step: 1,
+        message: 'Scene structure and exact duration beats locked.',
+        timestamp: new Date().toISOString(),
+      });
+
+      // Stage 2: Applying Anti-Slop Camera & Lighting Rules
+      send({
+        type: 'stage_started',
+        step: 2,
+        message: 'Applying realistic camera, lighting, and anti-slop physics rules...',
+        timestamp: new Date().toISOString(),
+      });
+
+      const blueprint = await generateRealisticVideoPlan(input, controller.signal);
+
+      send({
+        type: 'stage_completed',
+        step: 2,
+        message: 'Realistic video prompts, spoken script, and motion graphics prepared.',
+        blueprint,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Stage 3: Attempting Live Video Generation & Building Final Timeline
+      send({
+        type: 'stage_started',
+        step: 3,
+        message: 'Connecting video generator and finalizing timeline...',
+        timestamp: new Date().toISOString(),
+      });
+
+      const renderOutcome = await attemptCloudVideoRender(
+        blueprint.master_video_prompt,
+        input.cloudModel,
+        controller.signal
+      );
+
+      const finalBlueprint = {
+        ...blueprint,
+        video_render_status: renderOutcome.status,
+        video_render_message: renderOutcome.message,
+        video_data_url: renderOutcome.videoDataUrl,
+        video_model_used: renderOutcome.modelUsed,
+      };
+
+      send({
+        type: 'stage_completed',
+        step: 3,
+        message:
+          renderOutcome.status === 'ready'
+            ? 'Realistic AI video clip rendered and ready.'
+            : 'Prompts & timeline built; cloud render needs attention.',
+        timestamp: new Date().toISOString(),
+      });
+
+      send({
+        type: 'studio_completed',
+        blueprint: finalBlueprint,
+        message: renderOutcome.message,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        send({
+          type: 'error',
+          message:
+            err instanceof Error
+              ? err.message
+              : 'Video studio generation could not finish right now. Please try again.',
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } finally {
+      res.end();
+    }
+  });
+
+  // 5. Realistic Video Production Blueprint JSON endpoint
+  app.post('/api/video-blueprint', async (req, res) => {
+    const input = parseVideoStudioRequest((req.body ?? {}) as Record<string, unknown>);
+    if (!input.topic) {
+      res.status(400).json({ error: 'Please enter a Business, Brand, or Video Topic first.' });
       return;
     }
 
     try {
-      const result = await invokeStructuredLlm<{
-        title: string;
-        video_prompt: string;
-        hook: string;
-        scenes: Array<{ label: string; visual: string; line: string }>;
-        cta: string;
-      }>({
-        role: 'scoring',
-        systemInstruction: `You write clear, everyday short-form video concepts and realistic 5-second commercial text-to-video prompts for service businesses. Avoid agency jargon and buzzwords.
-Return ONLY valid JSON:
-{
-  "title": "Short concept title",
-  "video_prompt": "One vivid, realistic 5-second commercial camera shot prompt (subject, setting, lighting, camera movement, action, photorealistic commercial style, no text overlays)",
-  "hook": "Opening 3-second spoken line that grabs attention",
-  "scenes": [
-    { "label": "Scene 1 (0-5s)", "visual": "What appears on screen", "line": "What the speaker says" },
-    { "label": "Scene 2 (5-15s)", "visual": "What appears on screen", "line": "What the speaker says" },
-    { "label": "Scene 3 (15-25s)", "visual": "What appears on screen", "line": "What the speaker says" }
-  ],
-  "cta": "Simple, friendly closing call to action"
-}`,
-        prompt: `Business or Product Name: ${businessName}
-Video Type: ${videoType}
-Market Focus: ${market}
-Generate a practical 25-second storyboard AND a sharp, realistic 5-second commercial text-to-video prompt for ${businessName}.`,
-        useGrounding: false,
-      });
-
-      res.json(result.data);
+      const normalized = await generateRealisticVideoPlan(input);
+      res.json(normalized);
     } catch (err) {
       res.status(500).json({
-        error: err instanceof Error ? err.message : 'Could not generate video concept.',
+        error: err instanceof Error ? err.message : 'Could not build the video production plan.',
       });
     }
-  });
-
-  // 5. Hugging Face Inference Providers text-to-video proxy (returns playable MP4)
-  app.post('/api/video-generate', async (req, res) => {
-    const body = req.body ?? {};
-    const prompt = String(body.prompt ?? '').trim();
-    const modelId = String(body.model_id ?? DEFAULT_VIDEO_MODEL_ID).trim();
-    const providerRaw = String(body.provider ?? DEFAULT_VIDEO_PROVIDER_ID).trim();
-    const hfToken = String(req.header('x-hf-token') || body.hf_token || '').trim();
-
-    if (!hfToken) {
-      res.status(401).json({
-        error: 'Add your Hugging Face token in API Settings to render a playable video clip.',
-      });
-      return;
-    }
-
-    if (!prompt) {
-      res.status(400).json({ error: 'Please provide a video prompt first.' });
-      return;
-    }
-
-    if (!isAllowedVideoModel(modelId)) {
-      res.status(400).json({ error: 'Selected video model is not supported.' });
-      return;
-    }
-
-    if (!isAllowedVideoProvider(providerRaw)) {
-      res.status(400).json({ error: 'Selected video provider is not supported.' });
-      return;
-    }
-
-    const extractErrorDetails = (err: unknown): { status?: number; message: string } => {
-      if (err && typeof err === 'object') {
-        const record = err as {
-          message?: unknown;
-          httpResponse?: { status?: unknown; body?: unknown };
-        };
-        const status =
-          typeof record.httpResponse?.status === 'number' ? record.httpResponse.status : undefined;
-        let bodyMsg = '';
-        const httpBody = record.httpResponse?.body;
-        if (typeof httpBody === 'string') {
-          bodyMsg = httpBody;
-        } else if (httpBody && typeof httpBody === 'object') {
-          const b = httpBody as { error?: unknown; message?: unknown; detail?: unknown };
-          bodyMsg = String(b.error || b.message || b.detail || '');
-        }
-        const message = [bodyMsg, String(record.message ?? '')].filter(Boolean).join(' ');
-        return { status, message };
-      }
-      return { message: String(err ?? '') };
-    };
-
-    const resolveActiveProviders = async (
-      targetModel: VideoModelId,
-      token: string
-    ): Promise<Array<Exclude<VideoProviderId, 'auto'>>> => {
-      const supported: Array<Exclude<VideoProviderId, 'auto'>> = ['fal-ai', 'wavespeed'];
-      try {
-        const metaRes = await fetch(
-          `https://huggingface.co/api/models/${targetModel}?expand[]=inferenceProviderMapping`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-        if (metaRes.ok) {
-          const meta = (await metaRes.json()) as {
-            inferenceProviderMapping?: Record<
-              string,
-              { status?: string; task?: string }
-            >;
-          };
-          const mapping = meta.inferenceProviderMapping ?? {};
-          const activeLive = Object.entries(mapping)
-            .filter(
-              ([name, info]) =>
-                (name === 'fal-ai' || name === 'wavespeed') &&
-                info?.status === 'live' &&
-                (!info?.task || info.task === 'text-to-video')
-            )
-            .map(([name]) => name as Exclude<VideoProviderId, 'auto'>);
-
-          if (activeLive.length > 0) {
-            return activeLive;
-          }
-        }
-      } catch {
-        // Fall through to default provider list
-      }
-      return supported;
-    };
-
-    const client = new InferenceClient(hfToken);
-
-    const runWithProvider = async (targetProvider: Exclude<VideoProviderId, 'auto'>) => {
-      const videoBlob = await client.textToVideo({
-        model: modelId,
-        inputs: prompt,
-        provider: targetProvider,
-        parameters: {
-          negative_prompt: ['blurry', 'low quality', 'distorted', 'watermark', 'garbled text'],
-        },
-      });
-      const buf = Buffer.from(await videoBlob.arrayBuffer());
-      if (buf.length === 0) {
-        throw new Error('The provider returned an empty video file.');
-      }
-      return { buf, contentType: videoBlob.type || 'video/mp4' };
-    };
-
-    const candidates: Array<Exclude<VideoProviderId, 'auto'>> =
-      providerRaw === 'auto'
-        ? await resolveActiveProviders(modelId, hfToken)
-        : [providerRaw];
-
-    let lastFailure: { status?: number; message: string; providerId: VideoProviderId } = {
-      status: 502,
-      message: 'Could not generate video.',
-      providerId: providerRaw,
-    };
-
-    for (const candidate of candidates) {
-      try {
-        const { buf, contentType } = await runWithProvider(candidate);
-        res.setHeader('Content-Type', contentType.startsWith('video/') ? contentType : 'video/mp4');
-        res.setHeader('X-HF-Provider-Used', candidate);
-        res.send(buf);
-        return;
-      } catch (err) {
-        const { status, message } = extractErrorDetails(err);
-        lastFailure = { status, message, providerId: candidate };
-
-        // Token invalid or missing Inference Providers permission won't succeed on another provider
-        const isAuthFailure =
-          status === 401 ||
-          (status === 403 && /(permission|scope|inference providers)/i.test(message));
-        if (isAuthFailure || providerRaw !== 'auto') {
-          break;
-        }
-      }
-    }
-
-    const httpStatus =
-      lastFailure.status && lastFailure.status >= 400 && lastFailure.status < 600
-        ? lastFailure.status
-        : 502;
-
-    res.status(httpStatus).json({
-      error: formatVideoErrorMessage(
-        lastFailure.message,
-        lastFailure.status,
-        providerRaw === 'auto' ? lastFailure.providerId : providerRaw
-      ),
-    });
   });
 
   // Mount Vite middleware in development, or serve dist/ in production

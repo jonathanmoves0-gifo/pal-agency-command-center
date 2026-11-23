@@ -1,127 +1,13 @@
-import type { LeadRecord } from '../shared/types';
+import type { LeadRecord, LeadStatus, ServicePillar } from '../shared/types';
 
 export type MarketTrack = 'LOCAL' | 'GLOBAL';
-export type RecommendedServiceType = 'Website Upgrade' | 'AI Booking Assistant' | 'AI Video Ads';
-export type VideoModelId =
-  | 'Wan-AI/Wan2.2-TI2V-5B'
-  | 'Wan-AI/Wan2.2-T2V-A14B'
-  | 'Wan-AI/Wan2.1-T2V-14B'
-  | 'tencent/HunyuanVideo';
-
-export type VideoProviderId = 'auto' | 'fal-ai' | 'wavespeed';
-
-export const HF_TOKEN_STORAGE_KEY = 'pal_hf_token_v1';
-
-export const DEFAULT_VIDEO_MODEL_ID: VideoModelId = 'Wan-AI/Wan2.2-TI2V-5B';
-export const DEFAULT_VIDEO_PROVIDER_ID: VideoProviderId = 'auto';
-
-export const VIDEO_MODEL_OPTIONS: Array<{
-  label: string;
-  modelId: VideoModelId;
-}> = [
-  {
-    label: 'Wan 2.2 Fast 5B (Default)',
-    modelId: 'Wan-AI/Wan2.2-TI2V-5B',
-  },
-  {
-    label: 'Wan 2.2 High Detail (A14B)',
-    modelId: 'Wan-AI/Wan2.2-T2V-A14B',
-  },
-  {
-    label: 'Wan 2.1 Studio (14B)',
-    modelId: 'Wan-AI/Wan2.1-T2V-14B',
-  },
-  {
-    label: 'HunyuanVideo (Cinema Quality)',
-    modelId: 'tencent/HunyuanVideo',
-  },
-];
-
-export const VIDEO_PROVIDER_OPTIONS: Array<{
-  label: string;
-  providerId: VideoProviderId;
-}> = [
-  {
-    label: 'Auto (Try active provider first)',
-    providerId: 'auto',
-  },
-  {
-    label: 'fal',
-    providerId: 'fal-ai',
-  },
-  {
-    label: 'WaveSpeed',
-    providerId: 'wavespeed',
-  },
-];
-
-export function isAllowedVideoModel(modelId: string): modelId is VideoModelId {
-  return VIDEO_MODEL_OPTIONS.some((opt) => opt.modelId === modelId);
-}
-
-export function isAllowedVideoProvider(providerId: string): providerId is VideoProviderId {
-  return VIDEO_PROVIDER_OPTIONS.some((opt) => opt.providerId === providerId);
-}
-
-export function getVideoProviderLabel(providerId: string): string {
-  const match = VIDEO_PROVIDER_OPTIONS.find((opt) => opt.providerId === providerId);
-  if (match) {
-    return match.providerId === 'auto' ? 'active provider' : match.label;
-  }
-  return 'selected provider';
-}
-
-export function formatVideoErrorMessage(
-  rawError: string,
-  status?: number,
-  providerId: VideoProviderId = 'auto'
-): string {
-  const normalized = rawError.toLowerCase();
-  const providerName = getVideoProviderLabel(providerId);
-
-  if (
-    status === 402 ||
-    /(payment required|credit|credits|billing|balance|insufficient funds|depleted|monthly included|pre-?paid|quota exceeded)/i.test(
-      normalized
-    )
-  ) {
-    return `Your Hugging Face account or ${providerName} needs video credits or active billing to render this clip. Your generated video script and prompt are still ready below.`;
-  }
-
-  if (
-    status === 401 ||
-    /(invalid token|unauthorized|invalid username or password|bad credentials|token is invalid)/i.test(
-      normalized
-    )
-  ) {
-    return 'Your Hugging Face token was not accepted. Check or update your token in API Settings—your script and prompt are still ready below.';
-  }
-
-  if (
-    status === 403 ||
-    /(forbidden|permission|scope|inference providers|not authorized|access denied)/i.test(normalized)
-  ) {
-    return 'Your Hugging Face token does not have Inference Providers permission enabled. Update the token permissions on Hugging Face or paste a new token in API Settings.';
-  }
-
-  if (status === 429 || /(rate limit|too many requests|throttl)/i.test(normalized)) {
-    return `Too many requests went to ${providerName} right now. Wait a moment and try again, or switch providers.`;
-  }
-
-  if (
-    status === 503 ||
-    status === 504 ||
-    /(timed out|timeout|temporarily unavailable|loading|overloaded|service unavailable)/i.test(
-      normalized
-    )
-  ) {
-    return `The ${providerName} video server is busy right now. Try again in a moment or switch to another provider.`;
-  }
-
-  return 'Video rendering could not finish right now. Try switching the video provider or model, and use your generated script and prompt below in the meantime.';
-}
+export type RecommendedServiceType =
+  | 'Professional Website Design'
+  | 'AI Business Automation'
+  | 'Custom Agentic AI';
 
 export interface ClientPitchPresentation {
+  pillar: ServicePillar;
   service: RecommendedServiceType;
   serviceReason: string;
   sampleTitle: string;
@@ -138,94 +24,166 @@ export interface IndustryTemplate {
   tagline: string;
   defaultIssue: string;
   recommendedService: RecommendedServiceType;
+  recommendedPillar: ServicePillar;
   previewHeadline: string;
   previewSubheadline: string;
   previewCta: string;
   previewSections: string[];
+  trustHighlights: string[];
 }
+
+export const SERVICE_PILLARS: Array<{
+  id: ServicePillar;
+  label: RecommendedServiceType;
+  shortLabel: string;
+  description: string;
+}> = [
+  {
+    id: 'website_design',
+    label: 'Professional Website Design',
+    shortLabel: 'Website Design',
+    description:
+      'High-converting websites and focused service landing pages engineered to turn visitors into booked inquiries.',
+  },
+  {
+    id: 'ai_automation',
+    label: 'AI Business Automation',
+    shortLabel: 'AI Automation',
+    description:
+      '24/7 AI receptionists, instant lead capture, automated SMS/email follow-ups, and calendar/CRM sync.',
+  },
+  {
+    id: 'agentic_ai',
+    label: 'Custom Agentic AI',
+    shortLabel: 'Agentic AI',
+    description:
+      'Autonomous multi-step AI agents that research, qualify, route, and execute operational workflows end-to-end.',
+  },
+];
 
 export const WEBSITE_TEMPLATES: IndustryTemplate[] = [
   {
     id: 'clinics',
-    name: 'Clinics',
+    name: 'Clinics & Healthcare',
     industry: 'Dental & Medical Clinics',
     tagline: 'Instant consultation slot booking and patient treatment pre-qualification.',
-    defaultIssue: 'No online booking',
-    recommendedService: 'AI Booking Assistant',
-    previewHeadline: 'Book Your Consultation in Under 60 Seconds',
+    defaultIssue: 'Static callback form with no live booking',
+    recommendedService: 'AI Business Automation',
+    recommendedPillar: 'ai_automation',
+    previewHeadline: 'Book Your Consultation Online in Under 60 Seconds',
     previewSubheadline:
-      'Skip phone tag. Pick your treatment, choose an open time slot, and receive instant SMS confirmation.',
-    previewCta: 'Check Open Appointments',
+      'Pick your treatment, choose an open calendar slot immediately, and get instant SMS confirmation without phone tag.',
+    previewCta: 'Choose Your Appointment Time',
     previewSections: [
-      '2-Tap Treatment & Slot Picker',
-      'Verified Patient Review Strip',
-      'After-Hours SMS Callback Recovery',
+      '2-Step Treatment & Slot Selector',
+      'Verified Patient Outcome Reviews',
+      'After-Hours AI Inquiry Recovery',
     ],
+    trustHighlights: ['Same-week slot visibility', 'Automated SMS reminders', 'Mobile-first booking flow'],
   },
   {
     id: 'real-estate',
-    name: 'Real Estate',
+    name: 'Real Estate & Property',
     industry: 'Real Estate & Property Agencies',
     tagline: 'Fast mobile property galleries with instant private viewing requests.',
-    defaultIssue: 'Hard to use on mobile',
-    recommendedService: 'Website Upgrade',
+    defaultIssue: 'Slow mobile pages and unorganized inquiry routing',
+    recommendedService: 'Professional Website Design',
+    recommendedPillar: 'website_design',
     previewHeadline: 'Schedule Private Property Viewings Directly Online',
     previewSubheadline:
-      'Mobile-first listing pages with neighborhood highlights, mortgage estimator, and one-click agent booking.',
-    previewCta: 'Book a Viewing',
+      'Clean mobile listing pages with neighborhood highlights, valuation capture, and instant agent calendar routing.',
+    previewCta: 'Schedule Private Viewing',
     previewSections: [
-      'Fast Mobile Photo & Floorplan Viewer',
+      'Mobile-First Property & Floorplan Showcase',
       'Direct Viewing Time Selector',
-      'Instant Seller Valuation Capture Form',
+      'Instant Seller Valuation Capture',
     ],
+    trustHighlights: ['Zero-lag mobile gallery', 'Direct calendar routing', 'Qualified buyer pre-check'],
   },
   {
-    id: 'travel-safaris',
-    name: 'Travel & Safaris',
-    industry: 'Travel, Tours & Safari Operators',
-    tagline: 'High-trust itinerary showcases with custom trip quote capture.',
-    defaultIssue: 'Outdated design',
-    recommendedService: 'Website Upgrade',
-    previewHeadline: 'Custom Multi-Day Itineraries Built Around Your Dates',
+    id: 'b2b-services',
+    name: 'B2B Services & Consulting',
+    industry: 'B2B Advisory, Legal & Accounting Firms',
+    tagline: 'Authority-led service pages paired with automated client intake triage.',
+    defaultIssue: 'Generic contact page losing high-intent inquiries',
+    recommendedService: 'Custom Agentic AI',
+    recommendedPillar: 'agentic_ai',
+    previewHeadline: 'Clear Project Scope & Qualified Discovery Calls — Automated',
     previewSubheadline:
-      'Clear day-by-day route previews, transparent inclusions, and direct WhatsApp or email trip planning.',
-    previewCta: 'Request Custom Itinerary',
+      'Replace generic contact forms with an intelligent intake flow that qualifies fit, prepares briefs, and routes directly to partners.',
+    previewCta: 'Start Quick Fit Assessment',
     previewSections: [
-      'Day-by-Day Route & Lodge Preview',
-      'Instant Trip Inquiry & WhatsApp Handoff',
-      'Guest Story & Verified Trip Reviews',
+      'Service Clarity & Case Proof Strip',
+      'Automated Intake & Fit Qualification Flow',
+      'Partner Calendar & Brief Routing',
     ],
+    trustHighlights: ['Pre-qualified discovery calls', 'Automated intake summary', 'Clear service architecture'],
   },
   {
-    id: 'local-shops',
-    name: 'Local Shops',
-    industry: 'Local Retail & Service Shops',
-    tagline: 'Short-form product video hooks paired with easy local pickup or order links.',
-    defaultIssue: 'Outdated design',
-    recommendedService: 'AI Video Ads',
-    previewHeadline: 'Shop Best-Sellers With Same-Day Local Pickup',
+    id: 'home-commercial',
+    name: 'Home & Commercial Services',
+    industry: 'HVAC, Architecture & Local Service Firms',
+    tagline: 'High-trust local service landing pages with 60-second estimate capture.',
+    defaultIssue: 'Outdated design and missed after-hours quote requests',
+    recommendedService: 'Professional Website Design',
+    recommendedPillar: 'website_design',
+    previewHeadline: 'Request an Accurate Site Visit & Estimate in Minutes',
     previewSubheadline:
-      'Clean mobile catalog built to convert social video traffic straight into store visits and local orders.',
-    previewCta: 'Reserve In Store',
+      'Dedicated service pages built for mobile visitors with instant quote intake, service-area verification, and SMS updates.',
+    previewCta: 'Book Estimate Slot',
     previewSections: [
-      'Featured Best-Sellers Mobile Grid',
-      '1-Click Directions & Opening Hours',
-      'WhatsApp & SMS Order Confirmation',
+      'Dedicated Service & Coverage Verification',
+      'Instant Estimate & Photo Intake Form',
+      'Verified Local Client Review Strip',
     ],
+    trustHighlights: ['Service-area auto check', 'Missed-call SMS recovery', 'High-contrast mobile layout'],
   },
 ];
 
 export const QUICK_ISSUE_TAGS = [
-  'No online booking',
-  'Outdated design',
-  'Hard to use on mobile',
+  'Static callback form with no live booking',
+  'Outdated design losing mobile visitors',
+  'Manual lead qualification & slow follow-ups',
 ] as const;
 
 export function getStorageKeyForTrack(track: MarketTrack): string {
   return track === 'LOCAL' ? 'pal_leads_africa_local_v1' : 'pal_leads_international_global_v1';
 }
 
-export function recommendServiceForLead(lead: Pick<LeadRecord, 'discovery_notes' | 'bottleneck_diagnosis' | 'missed_capture_leaks' | 'ai_web_opportunities' | 'niche'>): {
+export function getPlainEnglishStatus(status: LeadStatus): {
+  label: string;
+  shortLabel: string;
+  tone: 'emerald' | 'amber' | 'slate';
+} {
+  switch (status) {
+    case 'APPROVED_FOR_OUTREACH':
+      return {
+        label: 'Ready to Contact',
+        shortLabel: 'Ready',
+        tone: 'emerald',
+      };
+    case 'NEEDS_REVIEW':
+      return {
+        label: 'Needs Quick Review',
+        shortLabel: 'Review',
+        tone: 'amber',
+      };
+    case 'PASS':
+      return {
+        label: 'Not a Fit',
+        shortLabel: 'Not a Fit',
+        tone: 'slate',
+      };
+  }
+}
+
+export function classifyPillarForLead(
+  lead: Pick<
+    LeadRecord,
+    'discovery_notes' | 'bottleneck_diagnosis' | 'missed_capture_leaks' | 'ai_web_opportunities' | 'niche'
+  >
+): {
+  pillar: ServicePillar;
   service: RecommendedServiceType;
   reason: string;
 } {
@@ -239,38 +197,65 @@ export function recommendServiceForLead(lead: Pick<LeadRecord, 'discovery_notes'
     .join(' ')
     .toLowerCase();
 
-  if (/(book|booking|appointment|calendar|schedule|callback|after-hours|reception|triage|whatsapp)/i.test(combined)) {
+  if (
+    /(agentic|multi-step|autonomous|qualify|routing|crm|triage agent|research workflow|research|procurement|rfp|intake workflow|ops workflow)/i.test(
+      combined
+    )
+  ) {
     return {
-      service: 'AI Booking Assistant',
+      pillar: 'agentic_ai',
+      service: 'Custom Agentic AI',
       reason:
-        'Captures visitors who land outside office hours and lets them book an appointment immediately instead of leaving.',
+        'Deploys an autonomous multi-step AI workflow to research, qualify, and route inquiries directly into your team’s calendar and CRM.',
     };
   }
 
-  if (/(video|ugc|tiktok|instagram|reels|social|ad creative|awareness|shop|retail)/i.test(combined)) {
+  if (
+    /(book|booking|appointment|calendar|schedule|callback|after-hours|reception|whatsapp|sms|follow-up|followup|missed-call|chatbot)/i.test(
+      combined
+    )
+  ) {
     return {
-      service: 'AI Video Ads',
+      pillar: 'ai_automation',
+      service: 'AI Business Automation',
       reason:
-        'Turns everyday customer questions and before-and-after results into short videos that bring ready-to-buy local leads.',
+        'Captures visitors 24/7 with an AI receptionist, automated SMS/email follow-up, and instant calendar slot booking.',
     };
   }
 
   return {
-    service: 'Website Upgrade',
+    pillar: 'website_design',
+    service: 'Professional Website Design',
     reason:
-      'Replaces slow, hard-to-navigate pages with a clear mobile-ready layout that turns more visitors into real enquiries.',
+      'Replaces slow or dated pages with a clean, high-converting landing experience engineered for mobile speed and clear inquiries.',
+  };
+}
+
+export function recommendServiceForLead(
+  lead: Pick<
+    LeadRecord,
+    'discovery_notes' | 'bottleneck_diagnosis' | 'missed_capture_leaks' | 'ai_web_opportunities' | 'niche'
+  >
+): {
+  service: RecommendedServiceType;
+  reason: string;
+} {
+  const result = classifyPillarForLead(lead);
+  return {
+    service: result.service,
+    reason: result.reason,
   };
 }
 
 export function buildPitchPresentation(lead: LeadRecord): ClientPitchPresentation {
-  const { service, reason } = recommendServiceForLead(lead);
+  const { pillar, service, reason } = classifyPillarForLead(lead);
 
   const sampleTitle =
-    service === 'AI Booking Assistant'
-      ? `24/7 Instant Booking Preview for ${lead.business_name}`
-      : service === 'AI Video Ads'
-        ? `3-Scene Short Video Concept for ${lead.business_name}`
-        : `Clean Mobile Homepage & Lead Form Mockup for ${lead.business_name}`;
+    pillar === 'ai_automation'
+      ? `24/7 AI Reception & Booking Workflow for ${lead.business_name}`
+      : pillar === 'agentic_ai'
+        ? `Custom Agentic Qualification System for ${lead.business_name}`
+        : `High-Converting Website Preview for ${lead.business_name}`;
 
   const sampleSummary = lead.bottleneck_diagnosis;
   const sampleHighlights =
@@ -282,14 +267,15 @@ export function buildPitchPresentation(lead: LeadRecord): ClientPitchPresentatio
   const fallbackBody = [
     `Hi ${lead.business_name} team,`,
     '',
-    `I took a look at ${lead.domain} earlier and noticed ${lead.missed_capture_leaks[0] || 'visitors have to wait for a manual callback to get started'}.`,
+    `I took a look at ${lead.domain} earlier and noticed ${lead.missed_capture_leaks[0] || 'visitors still have to wait for a manual callback to get started'}.`,
     '',
-    `I put together a quick free ${service.toLowerCase()} sample tailored for ${lead.business_name} so you can see how easy it is for new customers to book right away—no pitch deck or commitment.`,
+    `I put together a quick tailored ${service.toLowerCase()} preview for ${lead.business_name} so you can see how new inquiries can be captured and qualified automatically — no pitch deck or obligation.`,
     '',
     `Would you like me to send the preview link over?`,
   ].join('\n');
 
   return {
+    pillar,
     service,
     serviceReason: reason,
     sampleTitle,
@@ -308,23 +294,23 @@ export function buildSeedPitchForTrack(track: MarketTrack): LeadRecord {
       domain: 'kilimanicaredental.co.ke',
       niche: 'Dental Clinic',
       market: 'UK',
-      discovery_notes: 'No online booking',
+      discovery_notes: 'Static callback form with no live booking',
       intake_mode: 'single',
       bottleneck_diagnosis:
-        'Visitors looking for dental checkups or whitening on mobile must call during daytime hours or wait for a manual form reply.',
+        'Visitors looking for dental checkups or cosmetic care on mobile must call during daytime hours or wait for a manual form reply.',
       missed_capture_leaks: [
         'No online appointment picker on mobile pages',
         'Evening visitors cannot reserve a morning consultation slot',
       ],
       ai_web_opportunities: [
-        'Instant 2-tap WhatsApp and calendar booking widget',
+        'Instant 2-tap WhatsApp and calendar booking workflow',
         'Automated appointment reminder message to reduce no-shows',
       ],
       grounding_sources: [],
       sub_scores: { pain_signal: 22, niche_fit: 23, web_booking_gap: 24, reachability: 20 },
       total_score: 89,
       status: 'APPROVED_FOR_OUTREACH',
-      gatekeeper_reason: 'Strong local clinic fit with clear mobile booking gap.',
+      gatekeeper_reason: 'Strong local clinic fit with clear mobile booking and AI reception gap.',
       outreach_pack: {
         cold_email: {
           subject: 'Quick booking preview for kilimanicaredental.co.ke',
@@ -349,7 +335,7 @@ export function buildSeedPitchForTrack(track: MarketTrack): LeadRecord {
     domain: 'cavendishdental.co.uk',
     niche: 'Dental Clinics',
     market: 'UK',
-    discovery_notes: 'No online booking',
+    discovery_notes: 'Static callback form with no live booking',
     intake_mode: 'single',
     bottleneck_diagnosis:
       'High-intent visitors land on a static enquiry form that asks them to wait for a phone callback instead of choosing a consultation time immediately.',
@@ -365,7 +351,7 @@ export function buildSeedPitchForTrack(track: MarketTrack): LeadRecord {
     sub_scores: { pain_signal: 23, niche_fit: 24, web_booking_gap: 24, reachability: 20 },
     total_score: 91,
     status: 'APPROVED_FOR_OUTREACH',
-    gatekeeper_reason: 'Clear online booking gap on active ad traffic.',
+    gatekeeper_reason: 'Clear online booking gap on active search traffic.',
     outreach_pack: {
       cold_email: {
         subject: 'Quick booking idea for cavendishdental.co.uk',

@@ -1,0 +1,270 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: default-deny all unspecified paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable hardened primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(ownerId) {
+      return isVerifiedUser() && ownerId == request.auth.uid;
+    }
+
+    function isValidRegion(region) {
+      return region is string && region in ['Uganda', 'Kenya', 'East Africa', 'UK', 'US', 'EU'];
+    }
+
+    function isValidOffer(offer) {
+      return offer is string && offer in [
+        'Automated Mobile Website',
+        '24/7 AI Receptionist',
+        '9:16 AI UGC Ad Script'
+      ];
+    }
+
+    function isValidLeadApprovalStatus(status) {
+      return status is string && status in ['pending', 'approved', 'recalibrated', 'archived'];
+    }
+
+    function isValidLead(data) {
+      return data.keys().hasAll([
+          'ownerId',
+          'businessName',
+          'niche',
+          'region',
+          'selectedOffer',
+          'attempt1Score',
+          'attempt2Score',
+          'recalibrated',
+          'approvalStatus',
+          'deliverableId',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId',
+          'businessName',
+          'niche',
+          'region',
+          'websiteUrl',
+          'painSignal',
+          'contactEmail',
+          'contactPhone',
+          'selectedOffer',
+          'attempt1Score',
+          'attempt2Score',
+          'recalibrated',
+          'approvalStatus',
+          'feedbackNote',
+          'deliverableId',
+          'summarySnapshot',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.ownerId is string && data.ownerId.size() <= 128 && data.ownerId == request.auth.uid
+        && data.businessName is string && data.businessName.size() >= 1 && data.businessName.size() <= 160
+        && data.niche is string && data.niche.size() >= 1 && data.niche.size() <= 120
+        && isValidRegion(data.region)
+        && (!('websiteUrl' in data) || (data.websiteUrl is string && data.websiteUrl.size() <= 300))
+        && (!('painSignal' in data) || (data.painSignal is string && data.painSignal.size() <= 600))
+        && (!('contactEmail' in data) || (data.contactEmail is string && data.contactEmail.size() <= 180))
+        && (!('contactPhone' in data) || (data.contactPhone is string && data.contactPhone.size() <= 40))
+        && isValidOffer(data.selectedOffer)
+        && data.attempt1Score is number && data.attempt1Score >= 0 && data.attempt1Score <= 100
+        && data.attempt2Score is number && data.attempt2Score >= 0 && data.attempt2Score <= 100
+        && data.recalibrated is bool
+        && isValidLeadApprovalStatus(data.approvalStatus)
+        && (!('feedbackNote' in data) || (data.feedbackNote is string && data.feedbackNote.size() <= 400))
+        && isValidId(data.deliverableId)
+        && (!('summarySnapshot' in data) || (data.summarySnapshot is map && data.summarySnapshot.keys().size() <= 20))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidDeliverable(data) {
+      return data.keys().hasAll([
+          'ownerId',
+          'leadId',
+          'businessName',
+          'offerType',
+          'payload',
+          'outreachTouches',
+          'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId',
+          'leadId',
+          'businessName',
+          'offerType',
+          'payload',
+          'outreachTouches',
+          'createdAt'
+        ])
+        && data.ownerId is string && data.ownerId.size() <= 128 && data.ownerId == request.auth.uid
+        && isValidId(data.leadId)
+        && data.businessName is string && data.businessName.size() >= 1 && data.businessName.size() <= 160
+        && isValidOffer(data.offerType)
+        && data.payload is map && data.payload.keys().size() <= 24
+        && data.outreachTouches is list && data.outreachTouches.size() >= 1 && data.outreachTouches.size() <= 3
+        && data.outreachTouches[0] is map
+        && data.createdAt is timestamp;
+    }
+
+    function isValidCalibrationRule(data) {
+      return data.keys().hasAll([
+          'ownerId',
+          'ruleText',
+          'sourceBusiness',
+          'sourceOffer',
+          'active',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId',
+          'ruleText',
+          'sourceBusiness',
+          'sourceOffer',
+          'active',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.ownerId is string && data.ownerId.size() <= 128 && data.ownerId == request.auth.uid
+        && data.ruleText is string && data.ruleText.size() >= 4 && data.ruleText.size() <= 400
+        && data.sourceBusiness is string && data.sourceBusiness.size() >= 1 && data.sourceBusiness.size() <= 160
+        && data.sourceOffer is string && data.sourceOffer.size() >= 1 && data.sourceOffer.size() <= 80
+        && data.active is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidExecutionLog(data) {
+      return data.keys().hasAll([
+          'ownerId',
+          'leadId',
+          'businessName',
+          'providerUsed',
+          'initialScore',
+          'calibratedScore',
+          'recalibrated',
+          'stages',
+          'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId',
+          'leadId',
+          'businessName',
+          'providerUsed',
+          'initialScore',
+          'calibratedScore',
+          'recalibrated',
+          'stages',
+          'createdAt'
+        ])
+        && data.ownerId is string && data.ownerId.size() <= 128 && data.ownerId == request.auth.uid
+        && isValidId(data.leadId)
+        && data.businessName is string && data.businessName.size() >= 1 && data.businessName.size() <= 160
+        && data.providerUsed is string && data.providerUsed.size() >= 1 && data.providerUsed.size() <= 120
+        && data.initialScore is number && data.initialScore >= 0 && data.initialScore <= 100
+        && data.calibratedScore is number && data.calibratedScore >= 0 && data.calibratedScore <= 100
+        && data.recalibrated is bool
+        && data.stages is list && data.stages.size() >= 1 && data.stages.size() <= 12
+        && data.stages[0] is map
+        && data.createdAt is timestamp;
+    }
+
+    match /leads/{leadId} {
+      allow get: if isOwner(existing().ownerId) && isValidId(leadId);
+      allow list: if isVerifiedUser() && existing().ownerId == request.auth.uid;
+      allow create: if isVerifiedUser()
+        && isValidId(leadId)
+        && isValidLead(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(leadId)
+        && isValidLead(incoming())
+        && existing().ownerId == request.auth.uid
+        && existing().approvalStatus != 'archived'
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (incoming().diff(existing()).affectedKeys().hasOnly(['approvalStatus', 'updatedAt']))
+          || (incoming().diff(existing()).affectedKeys().hasOnly(['approvalStatus', 'feedbackNote', 'updatedAt']))
+        );
+      allow delete: if isOwner(existing().ownerId) && isValidId(leadId);
+    }
+
+    match /deliverables/{deliverableId} {
+      allow get: if isOwner(existing().ownerId) && isValidId(deliverableId);
+      allow list: if isVerifiedUser() && existing().ownerId == request.auth.uid;
+      allow create: if isVerifiedUser()
+        && isValidId(deliverableId)
+        && isValidDeliverable(incoming())
+        && incoming().createdAt == request.time
+        && existsAfter(/databases/$(database)/documents/leads/$(incoming().leadId))
+        && getAfter(/databases/$(database)/documents/leads/$(incoming().leadId)).data.ownerId == request.auth.uid;
+      allow update: if false;
+      allow delete: if isOwner(existing().ownerId) && isValidId(deliverableId);
+    }
+
+    match /calibration_rules/{ruleId} {
+      allow get: if isOwner(existing().ownerId) && isValidId(ruleId);
+      allow list: if isVerifiedUser() && existing().ownerId == request.auth.uid;
+      allow create: if isVerifiedUser()
+        && isValidId(ruleId)
+        && isValidCalibrationRule(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(ruleId)
+        && isValidCalibrationRule(incoming())
+        && existing().ownerId == request.auth.uid
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['active', 'updatedAt'])
+          || incoming().diff(existing()).affectedKeys().hasOnly(['ruleText', 'active', 'updatedAt'])
+        );
+      allow delete: if isOwner(existing().ownerId) && isValidId(ruleId);
+    }
+
+    match /execution_logs/{logId} {
+      allow get: if isOwner(existing().ownerId) && isValidId(logId);
+      allow list: if isVerifiedUser() && existing().ownerId == request.auth.uid;
+      allow create: if isVerifiedUser()
+        && isValidId(logId)
+        && isValidExecutionLog(incoming())
+        && incoming().createdAt == request.time
+        && existsAfter(/databases/$(database)/documents/leads/$(incoming().leadId))
+        && getAfter(/databases/$(database)/documents/leads/$(incoming().leadId)).data.ownerId == request.auth.uid;
+      allow update: if false;
+      allow delete: if isOwner(existing().ownerId) && isValidId(logId);
+    }
+  }
+}

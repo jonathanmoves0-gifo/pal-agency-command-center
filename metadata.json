@@ -1,6 +1,6 @@
 {
   "name": "Pal Agency Command Center",
-  "description": "Self-calibrating LangGraph agency signal hunter, lead qualifier, and outreach command center.",
+  "description": "Pal Technologies (palagentic.com) live LangGraph proof-of-work pipeline, interactive client deliverable previewer, and human-in-the-loop outreach vault.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

@@ -1,9 +1,9 @@
 import type { PipelineStreamEvent } from '../shared/types';
 
-export async function streamSsePost(
+export async function streamSsePost<TEvent = PipelineStreamEvent>(
   url: string,
   payload: unknown,
-  onEvent: (event: PipelineStreamEvent) => void,
+  onEvent: (event: TEvent) => void,
   signal?: AbortSignal
 ): Promise<void> {
   const response = await fetch(url, {
@@ -46,7 +46,7 @@ export async function streamSsePost(
     if (dataLines.length === 0) return;
     const rawData = dataLines.join('\n');
     try {
-      const parsed = JSON.parse(rawData) as PipelineStreamEvent;
+      const parsed = JSON.parse(rawData) as TEvent;
       onEvent(parsed);
     } catch {
       // ignore non-JSON heartbeat chunks
